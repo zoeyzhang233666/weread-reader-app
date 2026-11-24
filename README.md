@@ -66,7 +66,7 @@ curl -s -X POST http://127.0.0.1:17831/mcp \
 1. **先开代理/VPN**（需能访问 `api.openai.com`）  
 2. **先保证上面「公共前提」已登录**  
 3. 双击 `/Users/edy/weread-reader-app/tunnel/Start Weread Tunnel.command`  
-4. 粘贴 **Runtime API Key**（`sk-…`，输入不显示、不落盘）  
+4. 粘贴 **Runtime API Key**（`sk-…`；会保存到本机 `~/.weread-reader/tunnel-runtime-api-key.txt`，下次不用再输；也可在网页「设置」里填）  
    - 获取：[Platform → API keys](https://platform.openai.com/settings/organization/api-keys)  
    - 权限：**Tunnels Read + Use**（不要用 Admin Key）  
 5. 看到 `tunnel metadata fetched` 后，**不要关窗口**
@@ -181,16 +181,19 @@ stdio 进程会读本机 `~/.weread-reader/`。若未登录：
 
 ---
 
-## 配置官方 API Key（阅读时长等）
+## 配置 Key（网页「设置」）
 
-```sh
-printf '%s\n' 'wrk-你的密钥' > ~/.weread-reader/official-api-key.txt
-chmod 600 ~/.weread-reader/official-api-key.txt
-# 或：export WEREAD_API_KEY='wrk-…'
-# 或：让 Agent 调 weread_set_official_key
-```
+打开 <http://127.0.0.1:17831> → 顶部 **「设置」**（扫码登录后也有这个页）：
 
-详情：[docs/official-api.md](./docs/official-api.md)
+| Key | 用途 | 本机文件（不进 GitHub） |
+| --- | --- | --- |
+| 扫码 Cookie | 读正文 / 图片 | `~/.weread-reader/session.json` |
+| 官方 `wrk-…` | 阅读时长 / 笔记 / 搜索 | `~/.weread-reader/official-api-key.txt` |
+| 隧道 `sk-…` | 仅 ChatGPT 网页隧道 | `~/.weread-reader/tunnel-runtime-api-key.txt` |
+
+**扫码不能代替 `wrk-` / `sk-`。** 官方 Key 获取：https://weread.qq.com/r/weread-skills  
+
+详情：[docs/official-api.md](./docs/official-api.md)、[docs/chatgpt-tunnel.md](./docs/chatgpt-tunnel.md)
 
 ---
 

@@ -20,6 +20,12 @@ const state = {
   qrPhase: 'idle',
   otp: '',
   loading: false,
+  official: { configured: false, prefix: '', source: 'none', getKeyUrl: 'https://weread.qq.com/r/weread-skills' },
+  officialKeyDraft: '',
+  officialBusy: false,
+  tunnel: { configured: false, prefix: '', source: 'none', path: '' },
+  tunnelKeyDraft: '',
+  tunnelBusy: false,
 }
 
 const els = {
@@ -32,6 +38,7 @@ const els = {
   bottomMeta: document.getElementById('bottom-meta'),
   tabShelf: document.getElementById('tab-shelf'),
   tabReading: document.getElementById('tab-reading'),
+  tabSettings: document.getElementById('tab-settings'),
 }
 
 let toastTimer = 0
@@ -182,11 +189,135 @@ async function copyText(text) {
   area.remove()
 }
 
+function updateLoginMeta() {
+  const qr = state.loggedIn ? '扫码✓' : '扫码未登录'
+  const key = state.official?.configured
+    ? `官方Key✓(${state.official.prefix || 'wrk-…'})`
+    : '官方Key未填'
+  els.loginMeta.textContent = `${qr} · ${key}`
+}
+
 async function refreshStatus() {
   const status = await api('/api/status')
   state.loggedIn = Boolean(status.loggedIn)
-  els.loginMeta.textContent = state.loggedIn ? '已登录' : '未登录'
+  if (status.official) state.official = status.official
+  if (status.tunnel) state.tunnel = status.tunnel
+  updateLoginMeta()
   return status
+}
+
+async function refreshOfficialStatus() {
+  state.official = await api('/api/official/status')
+  updateLoginMeta()
+  return state.official
+}
+
+async function refreshTunnelStatus() {
+  state.tunnel = await api('/api/tunnel/status')
+  return state.tunnel
+}
+
+async function refreshSettingsStatus() {
+  await Promise.all([refreshOfficialStatus(), refreshTunnelStatus()])
+}
+
+async function saveOfficialKeyFromUi() {
+  const input = document.getElementById('official-key-input')
+  const value = String(input?.value || state.officialKeyDraft || '').trim()
+  if (!value) {
+    showError('请先粘贴 wrk- 开头的官方 API Key')
+    return
+  }
+  state.officialBusy = true
+  render()
+  try {
+    await api('/api/official/key', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey: value }),
+    })
+    state.officialKeyDraft = ''
+    await refreshOfficialStatus()
+    showError('')
+    showToast('官方 API Key 已保存')
+  } catch (error) {
+    showError(error.message)
+  } finally {
+    state.officialBusy = false
+    render()
+  }
+}
+
+async function clearOfficialKeyFromUi() {
+  state.officialBusy = true
+  render()
+  try {
+    await api('/api/official/key', { method: 'DELETE' })
+    state.officialKeyDraft = ''
+    await refreshOfficialStatus()
+    showToast('已清除官方 API Key')
+  } catch (error) {
+    showError(error.message)
+  } finally {
+    state.officialBusy = false
+    render()
+  }
+}
+
+async function testOfficialKeyFromUi() {
+  state.officialBusy = true
+  render()
+  try {
+    const result = await api('/api/official/test', { method: 'POST', body: '{}' })
+    showError('')
+    showToast(`Key 可用：本月阅读 ${result.totalReadTime || '—'}，有效 ${result.readDays ?? '—'} 天`)
+  } catch (error) {
+    showError(error.message)
+  } finally {
+    state.officialBusy = false
+    render()
+  }
+}
+
+async function saveTunnelKeyFromUi() {
+  const input = document.getElementById('tunnel-key-input')
+  const value = String(input?.value || state.tunnelKeyDraft || '').trim()
+  if (!value) {
+    showError('请先粘贴 sk- 开头的隧道 Runtime API Key')
+    return
+  }
+  state.tunnelBusy = true
+  render()
+  try {
+    await api('/api/tunnel/key', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey: value }),
+    })
+    state.tunnelKeyDraft = ''
+    await refreshTunnelStatus()
+    showError('')
+    showToast('隧道 Key 已保存到本机，下次启动隧道不用再输入')
+  } catch (error) {
+    showError(error.message)
+  } finally {
+    state.tunnelBusy = false
+    render()
+  }
+}
+
+async function clearTunnelKeyFromUi() {
+  state.tunnelBusy = true
+  render()
+  try {
+    await api('/api/tunnel/key', { method: 'DELETE' })
+    state.tunnelKeyDraft = ''
+    await refreshTunnelStatus()
+    showToast('已清除隧道 Key')
+  } catch (error) {
+    showError(error.message)
+  } finally {
+    state.tunnelBusy = false
+    render()
+  }
 }
 
 async function loadShelf({ patient = false } = {}) {
@@ -428,6 +559,56 @@ function renderLogin() {
   `
 }
 
+function renderSettings() {
+  const ok = Boolean(state.official?.configured)
+  const tunnelOk = Boolean(state.tunnel?.configured)
+  return `
+    <div class="settings">
+      <div class="settings-card">
+        <h3>三样凭证，各管一块</h3>
+        <p><strong>扫码登录</strong>：读章节正文 / 图片（Cookie）。不能替代下面两个 Key。</p>
+        <p><strong>官方 Skill Key</strong>（wrk-…）：阅读时长、进度、笔记、搜索。</p>
+        <p><strong>隧道 Runtime Key</strong>（sk-…）：仅 ChatGPT 网页连本机 MCP 时需要；WorkBuddy / Cursor 本地不用。</p>
+        <p class="hint">全部只保存在本机 ~/.weread-reader/，已加入 .gitignore，不会上传 GitHub。</p>
+      </div>
+      <div class="settings-card">
+        <h3>① 扫码登录（读正文）</h3>
+        <div class="status-pill" data-ok="${state.loggedIn ? '1' : '0'}">${state.loggedIn ? '已扫码登录' : '未扫码登录'}</div>
+        <p class="hint">在「书架」页扫码。登录态：~/.weread-reader/session.json</p>
+        ${!state.loggedIn ? '<button class="btn primary" id="goto-shelf-login" type="button">去书架扫码</button>' : '<button class="btn" id="goto-shelf" type="button">打开书架</button>'}
+      </div>
+      <div class="settings-card">
+        <h3>② 官方 Skill Key（wrk-…）</h3>
+        <div class="status-pill" data-ok="${ok ? '1' : '0'}">${ok ? `已配置 ${escapeHtml(state.official.prefix || 'wrk-…')}` : '尚未配置'}</div>
+        <p class="hint">文件：~/.weread-reader/official-api-key.txt</p>
+        <label class="hint" for="official-key-input">粘贴 wrk- 开头的 Key</label>
+        <input id="official-key-input" type="password" autocomplete="off" spellcheck="false"
+          placeholder="${ok ? '已保存，如需更换请重新粘贴' : 'wrk-xxxxxxxx'}"
+          value="${escapeHtml(state.officialKeyDraft)}" />
+        <div class="row">
+          <button class="btn primary" id="official-key-save" type="button" ${state.officialBusy ? 'disabled' : ''}>保存</button>
+          <button class="btn" id="official-key-test" type="button" ${state.officialBusy || !ok ? 'disabled' : ''}>测试</button>
+          <button class="btn" id="official-key-clear" type="button" ${state.officialBusy || !ok ? 'disabled' : ''}>清除</button>
+        </div>
+        <p class="hint">获取：<a href="https://weread.qq.com/r/weread-skills" target="_blank" rel="noreferrer">weread.qq.com/r/weread-skills</a></p>
+      </div>
+      <div class="settings-card">
+        <h3>③ 隧道 Runtime Key（sk-…，ChatGPT 用）</h3>
+        <div class="status-pill" data-ok="${tunnelOk ? '1' : '0'}">${tunnelOk ? `已配置 ${escapeHtml(state.tunnel.prefix || 'sk-…')}` : '尚未配置'}</div>
+        <p class="hint">文件：~/.weread-reader/tunnel-runtime-api-key.txt。保存后双击隧道启动器不必再输入。</p>
+        <label class="hint" for="tunnel-key-input">粘贴 sk- 开头的 Key</label>
+        <input id="tunnel-key-input" type="password" autocomplete="off" spellcheck="false"
+          placeholder="${tunnelOk ? '已保存，如需更换请重新粘贴' : 'sk-…'}"
+          value="${escapeHtml(state.tunnelKeyDraft)}" />
+        <div class="row">
+          <button class="btn primary" id="tunnel-key-save" type="button" ${state.tunnelBusy ? 'disabled' : ''}>保存</button>
+          <button class="btn" id="tunnel-key-clear" type="button" ${state.tunnelBusy || !tunnelOk ? 'disabled' : ''}>清除</button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 function renderShelf() {
   if (!state.loggedIn) return renderLogin()
   return `
@@ -435,7 +616,9 @@ function renderShelf() {
       <div class="head">
         <button class="btn" id="shelf-refresh" type="button">刷新</button>
         <button class="btn" id="shelf-logout" type="button">退出登录</button>
+        <button class="btn" id="shelf-settings" type="button">官方 Key 设置</button>
         <span class="meta">${state.loading && !state.books.length ? '同步中…' : `${state.books.length} 本`}</span>
+        <span class="meta">${state.official?.configured ? '官方Key✓' : '官方Key未填（设置页）'}</span>
       </div>
       ${state.books.length ? state.books.map(book => `
         <button class="book" type="button" data-book-id="${book.bookId}">
@@ -510,8 +693,13 @@ function render() {
   document.documentElement.style.setProperty('--font-scale', String(state.fontScale))
   els.tabShelf.dataset.active = state.tab === 'shelf' ? '1' : '0'
   els.tabReading.dataset.active = state.tab === 'reading' ? '1' : '0'
+  els.tabSettings.dataset.active = state.tab === 'settings' ? '1' : '0'
   els.body.dataset.mode = state.tab === 'reading' && state.book ? 'reading' : 'shelf'
-  els.body.innerHTML = state.tab === 'reading' ? renderReading() : renderShelf()
+  els.body.innerHTML = state.tab === 'reading'
+    ? renderReading()
+    : state.tab === 'settings'
+      ? renderSettings()
+      : renderShelf()
   updateBottom()
   bindDynamic()
   if (state.tab === 'reading' && state.book) {
@@ -528,6 +716,29 @@ function bindDynamic() {
   document.getElementById('otp-submit')?.addEventListener('click', () => {
     state.otp = document.getElementById('otp-input')?.value || ''
     void startQr()
+  })
+  document.getElementById('official-key-input')?.addEventListener('input', (event) => {
+    state.officialKeyDraft = event.target.value || ''
+  })
+  document.getElementById('official-key-save')?.addEventListener('click', () => void saveOfficialKeyFromUi())
+  document.getElementById('official-key-test')?.addEventListener('click', () => void testOfficialKeyFromUi())
+  document.getElementById('official-key-clear')?.addEventListener('click', () => void clearOfficialKeyFromUi())
+  document.getElementById('tunnel-key-input')?.addEventListener('input', (event) => {
+    state.tunnelKeyDraft = event.target.value || ''
+  })
+  document.getElementById('tunnel-key-save')?.addEventListener('click', () => void saveTunnelKeyFromUi())
+  document.getElementById('tunnel-key-clear')?.addEventListener('click', () => void clearTunnelKeyFromUi())
+  document.getElementById('goto-shelf-login')?.addEventListener('click', () => {
+    state.tab = 'shelf'
+    render()
+  })
+  document.getElementById('goto-shelf')?.addEventListener('click', () => {
+    state.tab = 'shelf'
+    render()
+  })
+  document.getElementById('shelf-settings')?.addEventListener('click', () => {
+    state.tab = 'settings'
+    void refreshSettingsStatus().then(() => render())
   })
   document.getElementById('shelf-refresh')?.addEventListener('click', () => void loadShelf({ patient: true }))
   document.getElementById('shelf-logout')?.addEventListener('click', async () => {
@@ -613,6 +824,13 @@ els.tabReading.addEventListener('click', () => {
   if (!state.book) return
   state.tab = 'reading'
   render()
+})
+els.tabSettings.addEventListener('click', () => {
+  state.tab = 'settings'
+  void refreshSettingsStatus().then(() => render()).catch((error) => {
+    showError(error.message)
+    render()
+  })
 })
 document.getElementById('btn-prev-chapter').addEventListener('click', () => {
   if (state.chapterIdx > 0) void openChapter(state.chapterIdx - 1, { startAtEnd: true })

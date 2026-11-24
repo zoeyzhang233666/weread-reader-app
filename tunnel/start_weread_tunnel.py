@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Foreground launcher for Weread Reader ↔ OpenAI Secure Tunnel. Never saves the runtime API key."""
+"""Foreground launcher for Weread Reader ↔ OpenAI Secure Tunnel.
+
+Runtime API Key is stored only on this Mac under ~/.weread-reader/
+(never committed to git). First run prompts once; later runs reuse it.
+"""
 import getpass
 import os
 import re
@@ -16,6 +20,8 @@ TUNNEL = "tunnel_6b052c37078c8191afe660304703dd84"
 ORG = "org-XMxn9etfgg4H9kmEW8HjnZuS"
 MCP_URL = "http://127.0.0.1:17831/mcp"
 HEALTH = "http://127.0.0.1:17831/health"
+DATA_DIR = Path.home() / ".weread-reader"
+KEY_FILE = DATA_DIR / "tunnel-runtime-api-key.txt"
 
 # Prefer known local installs, then PATH / Homebrew.
 CANDIDATES = [
@@ -52,24 +58,66 @@ def wait_weread(timeout: float = 20.0) -> None:
             time.sleep(0.4)
     raise SystemExit(
         f"Weread Reader 未在 {HEALTH} 运行。\n"
-        "请先打开 Weread Reader.app（或双击 dist 里的安装包），扫码登录后再跑本脚本。"
+        "请先打开 Weread Reader.app（或双击 Start Weread.command），扫码登录后再跑本脚本。"
     )
 
 
+def load_saved_key() -> str:
+    try:
+        if KEY_FILE.is_file():
+            value = KEY_FILE.read_text(encoding="utf-8").strip()
+            if value and not any(c.isspace() for c in value):
+                return value
+    except OSError:
+        pass
+    return ""
+
+
+def save_key(key: str) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    KEY_FILE.write_text(key + "\n", encoding="utf-8")
+    try:
+        os.chmod(KEY_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def resolve_key() -> str:
+    # Env wins for CI / advanced use (not written back unless empty file).
+    env_key = (os.environ.get("CONTROL_PLANE_API_KEY") or "").strip()
+    if env_key and not any(c.isspace() for c in env_key):
+        return env_key
+
+    saved = load_saved_key()
+    if saved:
+        print(f"已使用本机保存的 Runtime API Key（{KEY_FILE}）")
+        print("如需更换：删除该文件后重跑，或在网页「设置」里更新。")
+        return saved
+
+    print("需要 Platform 组织的 Runtime API Key（sk-…），权限：Tunnels Read + Use。")
+    print("不要用 Admin Key。输入不显示。")
+    print(f"将保存到本机 {KEY_FILE}（不会上传 GitHub）。")
+    key = getpass.getpass("Runtime API Key: ").strip()
+    if not key or any(c.isspace() for c in key):
+        raise SystemExit("Key 为空或含空格，未启动。")
+    save_key(key)
+    print("已保存。下次启动隧道无需再输入。")
+    return key
+
+
 def main() -> int:
-    if not sys.stdin.isatty():
-        raise SystemExit("请双击「Start Weread Tunnel.command」或在终端直接运行本脚本。")
+    if not sys.stdin.isatty() and not load_saved_key() and not os.environ.get("CONTROL_PLANE_API_KEY"):
+        raise SystemExit(
+            "请双击「Start Weread Tunnel.command」首次输入并保存 Key，"
+            f"或先把 Key 写入 {KEY_FILE}。"
+        )
 
     bin_path = find_bin()
     print("Weread Reader → OpenAI Secure Tunnel")
     print(f"Tunnel ID: {TUNNEL}")
     print(f"本机 MCP:  {MCP_URL}")
     print()
-    print("需要 Platform 组织的 Runtime API Key（sk-…），权限：Tunnels Read + Use。")
-    print("不要用 Admin Key。输入不显示，不会写入磁盘/历史。")
-    key = getpass.getpass("Runtime API Key: ").strip()
-    if not key or any(c.isspace() for c in key):
-        raise SystemExit("Key 为空或含空格，未启动。")
+    key = resolve_key()
 
     wait_weread()
 
@@ -146,5 +194,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (EOFError, KeyboardInterrupt):
-        print("\n已取消，未保存 Key。")
+        print("\n已取消。")
         raise SystemExit(130)

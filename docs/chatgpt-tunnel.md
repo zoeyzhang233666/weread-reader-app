@@ -47,7 +47,7 @@ tunnel_6b052c37078c8191afe660304703dd84
 - `tunnel/profiles/weread-local.yaml` → `control_plane.tunnel_id`
 - `tunnel/start_weread_tunnel.py` → `TUNNEL = "..."`  
 
-**永远不要**把 `sk-…` 写进仓库、截图或聊天记录。启动器只会在内存里用，输入不回显、不落盘。
+**永远不要**把 `sk-…` 提交到 GitHub 或发到公开聊天。启动器会把它保存在本机 `~/.weread-reader/tunnel-runtime-api-key.txt`（权限 600，已进 `.gitignore`），下次不用再输入；也可在网页「设置」里粘贴/清除。
 
 ### 3. tunnel-client
 
@@ -160,5 +160,5 @@ Windows：同样需要 Weread 便携包 + 官方 Windows 版 `tunnel-client`，�
 
 - 登录 Cookie / session 只在本机 `~/.weread-reader/`  
 - 隧道只转发 MCP JSON-RPC，不把微信读书账号密码交给第三方业务服务器  
-- Runtime API Key 不要提交 git；本仓库的启动器刻意用 `env:CONTROL_PLANE_API_KEY` + 交互输入  
+- Runtime API Key 不要提交 git；保存在 `~/.weread-reader/tunnel-runtime-api-key.txt`，启动器读该文件（也可环境变量 `CONTROL_PLANE_API_KEY`）  
 - 仓库建议 **私有**（含个人 Tunnel ID / 组织 ID）

@@ -43,3 +43,50 @@ export function dataDir() {
   ensureDir()
   return DIR
 }
+
+const TUNNEL_KEY_FILE = join(DIR, 'tunnel-runtime-api-key.txt')
+
+export function tunnelKeyPath() {
+  return TUNNEL_KEY_FILE
+}
+
+export function loadTunnelRuntimeKey() {
+  try {
+    if (!existsSync(TUNNEL_KEY_FILE)) return ''
+    return String(readFileSync(TUNNEL_KEY_FILE, 'utf8')).trim().split(/\r?\n/)[0].trim()
+  } catch {
+    return ''
+  }
+}
+
+export function saveTunnelRuntimeKey(key) {
+  const value = String(key || '').trim()
+  if (!value) throw new Error('隧道 Runtime API Key 为空')
+  if (!/^sk-/i.test(value)) {
+    throw new Error('隧道 Key 一般以 sk- 开头（OpenAI Platform Runtime API Key）')
+  }
+  ensureDir()
+  writeFileSync(TUNNEL_KEY_FILE, `${value}\n`, { mode: 0o600 })
+  return {
+    ok: true,
+    path: TUNNEL_KEY_FILE,
+    prefix: `${value.slice(0, 7)}…`,
+    configured: true,
+  }
+}
+
+export function clearTunnelRuntimeKey() {
+  ensureDir()
+  writeFileSync(TUNNEL_KEY_FILE, '')
+  return { ok: true, configured: false, path: TUNNEL_KEY_FILE }
+}
+
+export function tunnelKeyStatus() {
+  const key = loadTunnelRuntimeKey()
+  return {
+    configured: Boolean(key),
+    path: TUNNEL_KEY_FILE,
+    prefix: key ? `${key.slice(0, 7)}…` : '',
+    source: key ? 'file' : 'none',
+  }
+}

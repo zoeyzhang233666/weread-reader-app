@@ -1,7 +1,14 @@
 import { blocksToMarkdown, parseChapterBlocks, summarizeBlocksForMcp } from './chapterHtml.js'
 import { buildChaptersMarkdown, paragraphsFromText } from './exportText.js'
 import { parseChapterRange } from './range.js'
-import { clearSession, loadSession, saveSession } from './store.js'
+import {
+  clearSession,
+  loadSession,
+  saveSession,
+  tunnelKeyStatus as getTunnelKeyStatus,
+  saveTunnelRuntimeKey,
+  clearTunnelRuntimeKey,
+} from './store.js'
 import * as weread from './weread/client.js'
 import { fetchImageBatch } from './weread/images.js'
 import { createQrSession, finishLoginFromInfo, pollLoginInfo, refreshCookie } from './weread/login.js'
@@ -363,6 +370,18 @@ export function createService() {
 
     clearOfficialKey() {
       return official.clearOfficialApiKey()
+    },
+
+    tunnelKeyStatus() {
+      return getTunnelKeyStatus()
+    },
+
+    setTunnelKey(key) {
+      return saveTunnelRuntimeKey(key)
+    },
+
+    clearTunnelKey() {
+      return clearTunnelRuntimeKey()
     },
 
     async officialCall(apiName, params = {}) {

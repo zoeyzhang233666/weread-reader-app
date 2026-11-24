@@ -9,28 +9,30 @@
 | 章节正文 / 图片 / 富文本导出 | 扫码 Cookie（`Start Weread.command`） | `weread_get_chapter`、`weread_get_chapter_images` |
 | 阅读统计、进度、笔记、搜索、点评、推荐 | 官方 `WEREAD_API_KEY`（`wrk-…`） | `weread_reading_stats`、`weread_get_progress` 等 |
 
-## 配置 API Key
+## 扫码能不能代替 Key？
 
-1. 打开 https://weread.qq.com/r/weread-skills 获取 Key（`wrk-` 开头）。  
-2. 任选一种写入本机：
+**不能。** 这是两套鉴权：
+
+- **扫码 Cookie**：读章节正文 / 图片  
+- **官方 `wrk-` Key**：阅读时长、进度、笔记、搜索、推荐（腾讯 Agent Gateway）
+
+## 配置 API Key（推荐 GUI）
+
+1. 双击 `Start Weread.command`，打开 <http://127.0.0.1:17831>  
+2. 点顶部 **「设置」**  
+3. 打开 https://weread.qq.com/r/weread-skills 复制 `wrk-…` Key  
+4. 粘贴到「官方 API Key」输入框 → **保存 Key** → 可点 **测试**
+
+Key 只保存在本机 `~/.weread-reader/official-api-key.txt`，不会进 git。
+
+命令行备选（一般不用）：
 
 ```sh
-# 推荐：落盘（权限 600）
 printf '%s\n' 'wrk-你的密钥' > ~/.weread-reader/official-api-key.txt
 chmod 600 ~/.weread-reader/official-api-key.txt
-
-# 或环境变量
-export WEREAD_API_KEY='wrk-你的密钥'
 ```
 
-也可让 Agent 调用工具 `weread_set_official_key`（会写入上述文件）。**不要把 Key 提交到 git / 发到公开聊天。**
-
-自检：
-
-```sh
-# 重启 MCP 后
-# 工具 weread_server_info → officialApi.configured 应为 true
-```
+也可让 Agent 调 `weread_set_official_key`。**不要把 Key 发到公开聊天。**
 
 ## 新增 MCP 工具（官方）
 

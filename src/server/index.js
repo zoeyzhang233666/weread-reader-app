@@ -66,7 +66,50 @@ function staticPath(urlPath) {
 async function handleApi(req, res, path) {
   try {
     if (path === '/api/status' && req.method === 'GET') {
-      sendJson(res, 200, { ...service.status(), dataDir: dataDir(), port: PORT })
+      sendJson(res, 200, {
+        ...service.status(),
+        official: service.officialStatus(),
+        tunnel: service.tunnelKeyStatus(),
+        dataDir: dataDir(),
+        port: PORT,
+      })
+      return
+    }
+    if (path === '/api/official/status' && req.method === 'GET') {
+      sendJson(res, 200, service.officialStatus())
+      return
+    }
+    if (path === '/api/official/key' && req.method === 'POST') {
+      const body = await readJson(req)
+      sendJson(res, 200, service.setOfficialKey(String(body.apiKey || body.key || '')))
+      return
+    }
+    if (path === '/api/official/key' && req.method === 'DELETE') {
+      sendJson(res, 200, service.clearOfficialKey())
+      return
+    }
+    if (path === '/api/official/test' && req.method === 'POST') {
+      // Lightweight call to prove the key works
+      const stats = await service.readingStats({ mode: 'monthly' })
+      sendJson(res, 200, {
+        ok: true,
+        mode: stats.mode,
+        totalReadTime: stats.totalReadTime,
+        readDays: stats.readDays,
+      })
+      return
+    }
+    if (path === '/api/tunnel/status' && req.method === 'GET') {
+      sendJson(res, 200, service.tunnelKeyStatus())
+      return
+    }
+    if (path === '/api/tunnel/key' && req.method === 'POST') {
+      const body = await readJson(req)
+      sendJson(res, 200, service.setTunnelKey(String(body.apiKey || body.key || '')))
+      return
+    }
+    if (path === '/api/tunnel/key' && req.method === 'DELETE') {
+      sendJson(res, 200, service.clearTunnelKey())
       return
     }
     if (path === '/api/auth/qr/start' && req.method === 'POST') {

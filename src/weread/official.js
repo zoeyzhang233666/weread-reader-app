@@ -95,7 +95,7 @@ export async function officialGateway(apiName, params = {}) {
   const key = loadOfficialApiKey()
   if (!key) {
     const err = new Error(
-      '未配置官方 WEREAD_API_KEY。请打开 https://weread.qq.com/r/weread-skills 获取 Key，然后：export WEREAD_API_KEY=wrk-… 或写入 ~/.weread-reader/official-api-key.txt，或调用 weread_set_official_key。',
+      '未配置官方 WEREAD_API_KEY。请打开 http://127.0.0.1:17831 →「设置」粘贴 wrk- Key；或到 https://weread.qq.com/r/weread-skills 获取后写入 ~/.weread-reader/official-api-key.txt。扫码 Cookie 不能代替官方 Key。',
     )
     err.code = 'OFFICIAL_KEY_MISSING'
     throw err

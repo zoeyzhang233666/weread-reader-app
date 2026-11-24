@@ -24,6 +24,6 @@
 3. WorkBuddy → MCP/连接器 → 对 `weread-reader` **信任**。  
 4. **新开会话**，试：`调用 weread_server_info`。
 
-阅读时长 / 笔记 / 搜索等官方能力需另配 `wrk-` Key，见 [official-api.md](./official-api.md)。
+阅读时长 / 笔记 / 搜索等官方能力需另配 `wrk-` Key：**扫码不能代替**。在网页顶部「设置」粘贴即可，见 [official-api.md](./official-api.md)。
 
 完整对照表与 ChatGPT 用法见仓库根目录 [README.md](../README.md)。

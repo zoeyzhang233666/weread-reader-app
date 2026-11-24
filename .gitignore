@@ -11,5 +11,8 @@ src-tauri/target/
 **/runtime-redacted.log
 **/doctor-redacted.txt
 tunnel.pid
-# never commit official wrk- keys (live under ~/.weread-reader/)
+# never commit keys (live under ~/.weread-reader/ — also ignore accidental copies)
 official-api-key.txt
+tunnel-runtime-api-key.txt
+**/tunnel-runtime-api-key.txt
+**/official-api-key.txt
