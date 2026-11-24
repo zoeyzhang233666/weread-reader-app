@@ -128,6 +128,53 @@ export function createService() {
       }
     },
 
+    /** Bookshelf folders (Weread archive / 书单分组). */
+    async shelfGroups({ patient = false } = {}) {
+      const shelf = await this.shelf({ patient })
+      const groups = (shelf.groups || []).map((g) => ({
+        groupId: g.groupId,
+        archiveId: g.archiveId,
+        name: g.name,
+        bookCount: g.bookCount,
+        albumCount: g.albumCount,
+        updateTime: g.updateTime,
+      }))
+      return {
+        groupCount: groups.length,
+        groups,
+        source: 'cookie:/web/shelf/sync archive[]',
+        note: 'Official gateway /shelf/sync also returns archive[] (name+bookIds) but omits archiveId; Cookie sync is preferred for stable groupId.',
+      }
+    },
+
+    async shelfGroupBooks({ groupId, name, patient = false } = {}) {
+      const id = String(groupId || '').trim()
+      const n = String(name || '').trim()
+      if (!id && !n) throw new Error('需要 groupId 或 name（书架分组 ID / 名称，如「神作」「仙草」）')
+      const shelf = await this.shelf({ patient })
+      const group = weread.findShelfGroup(shelf.groups || [], { groupId: id, name: n })
+      if (!group) {
+        const available = (shelf.groups || []).map((g) => `${g.name}(${g.groupId})`).join('、')
+        throw new Error(`未找到分组「${id || n}」。现有分组：${available || '无'}`)
+      }
+      const idSet = new Set(group.bookIds.map(String))
+      const books = (shelf.books || []).filter((b) => idSet.has(String(b.bookId)))
+      // Preserve archive order when possible
+      const byId = new Map(books.map((b) => [String(b.bookId), b]))
+      const ordered = group.bookIds.map((bid) => byId.get(String(bid))).filter(Boolean)
+      return {
+        group: {
+          groupId: group.groupId,
+          archiveId: group.archiveId,
+          name: group.name,
+          bookCount: group.bookCount,
+        },
+        bookCount: ordered.length,
+        books: ordered,
+        missingBookIds: group.bookIds.filter((bid) => !byId.has(String(bid))),
+      }
+    },
+
     async bookInfo(bookId) {
       const cookie = requireCookie()
       const id = String(bookId || '').trim()

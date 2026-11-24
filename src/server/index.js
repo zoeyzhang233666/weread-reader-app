@@ -131,6 +131,22 @@ async function handleApi(req, res, path) {
       sendJson(res, 200, shelf)
       return
     }
+    if (path === '/api/shelf/groups' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      sendJson(res, 200, await service.shelfGroups({
+        patient: url.searchParams.get('patient') === '1',
+      }))
+      return
+    }
+    if (path === '/api/shelf/group-books' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      sendJson(res, 200, await service.shelfGroupBooks({
+        groupId: url.searchParams.get('groupId') || '',
+        name: url.searchParams.get('name') || '',
+        patient: url.searchParams.get('patient') === '1',
+      }))
+      return
+    }
     if (path === '/api/chapters' && req.method === 'GET') {
       const url = new URL(req.url || '/', `http://${HOST}`)
       const bookId = url.searchParams.get('bookId')

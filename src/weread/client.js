@@ -57,6 +57,56 @@ export function shouldRetryEmptyShelf(shelf) {
   return Array.isArray(shelf?.books) && shelf.books.length === 0 && Number.isFinite(count) && count > 0
 }
 
+/** User-imported books (TXT/EPUB/PDF) use CB_/UP_ ids; store books are usually numeric. */
+export function isImportedBook(book = {}) {
+  const id = String(book?.bookId || '')
+  return id.startsWith('CB_') || id.startsWith('UP_') || Boolean(book?.isImport)
+}
+
+export function normalizeShelfGroups(data = {}) {
+  const archives = Array.isArray(data.archive) ? data.archive : []
+  return archives.map((raw, index) => {
+    const name = String(raw?.name ?? raw?.title ?? '').trim() || `分组${index + 1}`
+    const archiveId = raw?.archiveId ?? raw?.id ?? raw?.archive_id
+    const groupId = archiveId != null && archiveId !== ''
+      ? String(archiveId)
+      : `name:${name}`
+    const bookIds = (Array.isArray(raw?.bookIds) ? raw.bookIds : [])
+      .map((id) => String(id))
+      .filter(Boolean)
+    const albumIds = (
+      Array.isArray(raw?.albumIds)
+        ? raw.albumIds
+        : Array.isArray(raw?.lectureBookIds)
+          ? raw.lectureBookIds
+          : []
+    ).map((id) => String(id)).filter(Boolean)
+    return {
+      groupId,
+      archiveId: archiveId != null && archiveId !== '' ? String(archiveId) : null,
+      name,
+      bookCount: bookIds.length,
+      albumCount: albumIds.length,
+      bookIds,
+      albumIds,
+      updateTime: Number(raw?.updateTime || 0) || 0,
+    }
+  })
+}
+
+function buildBookGroupIndex(groups) {
+  /** @type {Map<string, Array<{ groupId: string, name: string }>>} */
+  const byBookId = new Map()
+  for (const group of groups) {
+    for (const bookId of group.bookIds) {
+      const list = byBookId.get(bookId) || []
+      list.push({ groupId: group.groupId, name: group.name })
+      byBookId.set(bookId, list)
+    }
+  }
+  return byBookId
+}
+
 export function normalizeShelfData(data = {}) {
   const progress = {}
   for (const row of data.bookProgress ?? []) {
@@ -70,26 +120,56 @@ export function normalizeShelfData(data = {}) {
       updateTime: row.updateTime,
     }
   }
+  const groups = normalizeShelfGroups(data)
+  const groupIndex = buildBookGroupIndex(groups)
   const books = (Array.isArray(data.books) ? data.books : []).map((book) => {
     const bookId = book.bookId
     const prog = progress[bookId]
+    const membership = groupIndex.get(String(bookId)) || []
+    const format = book.format ?? book.book?.format ?? ''
+    const imported = String(bookId || '').startsWith('CB_')
+      || String(bookId || '').startsWith('UP_')
     return {
       bookId,
       title: book.title ?? book.book?.title ?? 'Untitled',
       author: book.author ?? book.book?.author ?? '',
       cover: book.cover ?? book.book?.cover ?? '',
       progress: book.progress ?? prog?.progress,
-      finished: book.finished ?? prog?.finished,
-      format: book.format ?? book.book?.format,
+      finished: book.finished ?? book.finishReading ?? prog?.finished,
+      format,
+      isImport: imported,
+      source: imported ? 'import' : 'store',
+      groups: membership,
+      groupIds: membership.map((g) => g.groupId),
+      groupNames: membership.map((g) => g.name),
       readUpdateTime: Number(book.readUpdateTime || prog?.updateTime || 0) || 0,
     }
   })
   books.sort((a, b) => (b.readUpdateTime || 0) - (a.readUpdateTime || 0))
   return {
     books,
+    groups,
     progress,
     bookCount: Number(data.bookCount) || books.length,
   }
+}
+
+export function findShelfGroup(groups, { groupId, name } = {}) {
+  const list = Array.isArray(groups) ? groups : []
+  const id = String(groupId || '').trim()
+  const n = String(name || '').trim()
+  if (id) {
+    const byId = list.find((g) => g.groupId === id || g.archiveId === id)
+    if (byId) return byId
+  }
+  if (n) {
+    const exact = list.find((g) => g.name === n)
+    if (exact) return exact
+    const lower = n.toLowerCase()
+    const loose = list.find((g) => String(g.name).toLowerCase() === lower)
+    if (loose) return loose
+  }
+  return null
 }
 
 function sleep(ms) {
@@ -149,7 +229,12 @@ export async function getShelf(cookie, { retries = 3, patientEmpty = false } = {
       shouldRetryEmptyShelf(shelf) || (patientEmpty && emptyList)
     )
     if (!shouldRetry) {
-      return { books: shelf.books, bookCount: shelf.bookCount }
+      return {
+        books: shelf.books,
+        groups: shelf.groups,
+        bookCount: shelf.bookCount,
+        groupCount: shelf.groups.length,
+      }
     }
     attempt += 1
     await sleep(500 * attempt)

@@ -2,14 +2,14 @@
 
 export const SERVER_INFO = {
   name: 'weread-reader',
-  version: '0.3.0-official+images',
+  version: '0.3.1-groups+images',
 }
 
 export const TOOLS = [
   {
     name: 'weread_server_info',
     description:
-      'ALWAYS call this first to verify the Weread MCP build. Returns version (expect 0.3.0-official+images), chapter ImageContent support, and whether the official WEREAD_API_KEY (wrk-) is configured for reading stats/notes/search.',
+      'ALWAYS call this first to verify the Weread MCP build. Returns version (expect 0.3.1-groups+images), chapter ImageContent support, bookshelf groups, and whether the official WEREAD_API_KEY (wrk-) is configured for reading stats/notes/search.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -155,10 +155,49 @@ export const TOOLS = [
   },
   {
     name: 'weread_list_bookshelf',
-    description: 'List books on the logged-in WeChat Reading bookshelf.',
+    description:
+      'List books on the logged-in WeChat Reading bookshelf (official store + user-imported TXT/EPUB/PDF). Each book includes groups/groupIds/groupNames for shelf folder membership.',
     inputSchema: {
       type: 'object',
       properties: {
+        patient: {
+          type: 'boolean',
+          description: 'Retry longer right after login when shelf may still be syncing.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_list_bookshelf_groups',
+    description:
+      'List bookshelf folders/groups (Weread archive 书单), including groupId, name, and bookCount. Prefer this before listing books in a folder. Works for folders that contain imported TXT/EPUB as well as store books.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        patient: {
+          type: 'boolean',
+          description: 'Retry longer right after login when shelf may still be syncing.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_list_bookshelf_group_books',
+    description:
+      'List all books inside one bookshelf folder/group. Identify the group by groupId (from weread_list_bookshelf_groups) or by exact name (e.g. 神作 / 仙草). Includes imported TXT/EPUB and official store books.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        groupId: {
+          type: 'string',
+          description: 'Archive/group id from weread_list_bookshelf_groups (preferred).',
+        },
+        name: {
+          type: 'string',
+          description: 'Folder display name, e.g. 神作 or 仙草.',
+        },
         patient: {
           type: 'boolean',
           description: 'Retry longer right after login when shelf may still be syncing.',
@@ -391,12 +430,50 @@ export function createMcpHandler(service) {
           const shelf = await service.shelf({ patient: Boolean(args.patient) })
           return textResult({
             bookCount: shelf.bookCount ?? shelf.books?.length ?? 0,
+            groupCount: shelf.groupCount ?? shelf.groups?.length ?? 0,
+            groups: (shelf.groups || []).map((g) => ({
+              groupId: g.groupId,
+              name: g.name,
+              bookCount: g.bookCount,
+            })),
             books: (shelf.books || []).map(book => ({
               bookId: book.bookId,
               title: book.title,
               author: book.author,
               progress: book.progress,
+              format: book.format,
+              isImport: book.isImport,
+              source: book.source,
+              groups: book.groups || [],
+              groupIds: book.groupIds || [],
+              groupNames: book.groupNames || [],
             })),
+          })
+        }
+        case 'weread_list_bookshelf_groups':
+          return textResult(await service.shelfGroups({ patient: Boolean(args.patient) }))
+        case 'weread_list_bookshelf_group_books': {
+          const body = await service.shelfGroupBooks({
+            groupId: args.groupId,
+            name: args.name,
+            patient: Boolean(args.patient),
+          })
+          return textResult({
+            group: body.group,
+            bookCount: body.bookCount,
+            books: (body.books || []).map((book) => ({
+              bookId: book.bookId,
+              title: book.title,
+              author: book.author,
+              progress: book.progress,
+              format: book.format,
+              isImport: book.isImport,
+              source: book.source,
+              groups: book.groups || [],
+              groupIds: book.groupIds || [],
+              groupNames: book.groupNames || [],
+            })),
+            missingBookIds: body.missingBookIds || [],
           })
         }
         case 'weread_get_book_info':

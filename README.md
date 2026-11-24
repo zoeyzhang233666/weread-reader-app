@@ -203,9 +203,11 @@ stdio 进程会读本机 `~/.weread-reader/`。若未登录：
 
 | Tool | 作用 |
 |------|------|
-| `weread_server_info` | 版本自检（应见 `0.3.0-official+images`） |
+| `weread_server_info` | 版本自检（应见 `0.3.1-groups+images`） |
 | `weread_status` | Cookie 登录 + 官方 Key 是否已配 |
-| `weread_list_bookshelf` | 书架（Cookie） |
+| `weread_list_bookshelf` | 书架（含每本书的 `groups` / `groupNames`，官方书 + 导入 TXT/EPUB） |
+| `weread_list_bookshelf_groups` | 书架文件夹列表（`groupId` / 名称 / 书籍数） |
+| `weread_list_bookshelf_group_books` | 按分组 ID 或名称列出文件夹内全部书（如「神作」「仙草」） |
 | `weread_get_book_info` | 元数据（Cookie） |
 | `weread_list_chapters` | 目录 |
 | `weread_get_chapter` | 单章；**默认**图文 + ImageContent |
@@ -229,7 +231,7 @@ stdio 进程会读本机 `~/.weread-reader/`。若未登录：
 
 端口（HTTP 模式）默认 **17831**：UI `/` ，MCP `/mcp` ，健康检查 `/health`。
 
-图片/表格：[docs/rich-content.md](./docs/rich-content.md) · WorkBuddy：[docs/workbuddy.md](./docs/workbuddy.md)
+图片/表格：[docs/rich-content.md](./docs/rich-content.md) · 书架分组：[docs/bookshelf-groups.md](./docs/bookshelf-groups.md) · WorkBuddy：[docs/workbuddy.md](./docs/workbuddy.md)
 
 ---
 
