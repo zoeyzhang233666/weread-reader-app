@@ -13,29 +13,27 @@
 
 ### A. 启动微信读书服务（本机阅读器 + MCP）
 
-**方式 1（推荐，有安装包时）**
+**推荐（源码目录，保证最新、带图片能力）**
 
-1. 打开 [Releases](https://github.com/zoeyzhang233666/weread-reader-app/releases)  
-2. Mac 下 `WereadReader-*-mac-arm64.dmg` → 拖到「应用程序」→ 点开 **Weread Reader**  
-   （首次拦截：右键 App → 打开 → 仍要打开）  
-3. 浏览器应自动出现 <http://127.0.0.1:17831>  
-4. **扫码登录**微信读书（只需登录一次；登录态在 `~/.weread-reader/`）
+1. Finder 打开 `/Users/edy/weread-reader-app/`  
+2. 双击 **`Start Weread.command`**  
+3. 浏览器打开 <http://127.0.0.1:17831> → **扫码登录**（登录态在 `~/.weread-reader/`）
 
-**方式 2（本机已有源码目录时）**
+> 不要用旧的 `Weread Reader.app`（若未重新打包，里面可能还是只有 5 个旧工具、无图片）。
 
-```sh
-cd /Users/edy/weread-reader-app
-node src/server/index.js
-```
-
-然后浏览器打开 <http://127.0.0.1:17831> 扫码。
-
-自检：
+自检（必须能看到 **7 个**工具，含 `weread_get_chapter_images`）：
 
 ```sh
 curl -s http://127.0.0.1:17831/health
 # 期望：{"ok":true,"loggedIn":true}
+
+curl -s -X POST http://127.0.0.1:17831/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | python3 -c 'import sys,json; print([t["name"] for t in json.load(sys.stdin)["result"]["tools"]])'
 ```
+
+若 ChatGPT 仍只列 5 个旧接口：**新开一条对话**（或删了重加 Connectors 里的 `read`）。旧对话会缓存 tools 列表。
 
 ### B. 启动 OpenAI 隧道（让网页 ChatGPT 连上本机）
 
