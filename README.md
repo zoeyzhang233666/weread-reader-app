@@ -5,8 +5,16 @@
 1. **网页版 ChatGPT**（需要 OpenAI Secure Tunnel）  
 2. **WorkBuddy / Cursor 等本机 Agent**（本地 stdio，**不需要隧道**）
 
+能力分两路（互补官方 Skill）：
+
+| 能力 | 怎么鉴权 | 说明 |
+|------|----------|------|
+| **章节正文 + 图片/表格图** | 扫码 Cookie | 官方 Skill **没有**读正文；本仓库有 |
+| **阅读时长/进度/笔记/搜索/推荐** | 官方 `wrk-` API Key | 对齐 [Tencent/WeChatReading](https://github.com/Tencent/WeChatReading) Skill |
+
 > 仓库（私有）：https://github.com/zoeyzhang233666/weread-reader-app  
-> 安装包：https://github.com/zoeyzhang233666/weread-reader-app/releases
+> 安装包：https://github.com/zoeyzhang233666/weread-reader-app/releases  
+> 官方 Key：https://weread.qq.com/r/weread-skills  
 
 ---
 
@@ -173,22 +181,52 @@ stdio 进程会读本机 `~/.weread-reader/`。若未登录：
 
 ---
 
+## 配置官方 API Key（阅读时长等）
+
+```sh
+printf '%s\n' 'wrk-你的密钥' > ~/.weread-reader/official-api-key.txt
+chmod 600 ~/.weread-reader/official-api-key.txt
+# 或：export WEREAD_API_KEY='wrk-…'
+# 或：让 Agent 调 weread_set_official_key
+```
+
+详情：[docs/official-api.md](./docs/official-api.md)
+
+---
+
 ## MCP 工具一览
+
+### 正文 / 图片（扫码 Cookie）
 
 | Tool | 作用 |
 |------|------|
-| `weread_server_info` | 版本与能力自检（应见 `0.2.2-images`） |
-| `weread_status` | 是否已登录 |
-| `weread_list_bookshelf` | 书架 |
-| `weread_get_book_info` | 元数据（字数/作者/出版社/ISBN/章节数） |
+| `weread_server_info` | 版本自检（应见 `0.3.0-official+images`） |
+| `weread_status` | Cookie 登录 + 官方 Key 是否已配 |
+| `weread_list_bookshelf` | 书架（Cookie） |
+| `weread_get_book_info` | 元数据（Cookie） |
 | `weread_list_chapters` | 目录 |
-| `weread_get_chapter` | 单章；**默认**返回图文 + ImageContent；仅文字时用 `plain=true` |
-| `weread_get_chapter_images` | 分批拉章节图片（表格/结构式等） |
-| `weread_export_chapters` | 导出 Markdown（默认保留图片链接） |
+| `weread_get_chapter` | 单章；**默认**图文 + ImageContent |
+| `weread_get_chapter_images` | 分批拉章节图片 |
+| `weread_export_chapters` | 导出 Markdown |
+
+### 官方 Gateway（`wrk-` Key）
+
+| Tool | 作用 |
+|------|------|
+| `weread_set_official_key` | 保存官方 Key |
+| `weread_reading_stats` | 本周/月/年/总计阅读时长与偏好 |
+| `weread_get_progress` | 单本书进度 % 与累计时长 |
+| `weread_search_books` | 书城搜索 |
+| `weread_list_notebooks` | 有笔记的书 |
+| `weread_get_book_notes` | 划线 + 想法 |
+| `weread_list_reviews` | 公开点评 |
+| `weread_recommend_books` | 推荐 / 相似书 |
+| `weread_hot_bookmarks` | 热门划线 |
+| `weread_official_call` | 白名单内原始官方接口 |
 
 端口（HTTP 模式）默认 **17831**：UI `/` ，MCP `/mcp` ，健康检查 `/health`。
 
-图片/表格细节：[docs/rich-content.md](./docs/rich-content.md)
+图片/表格：[docs/rich-content.md](./docs/rich-content.md) · WorkBuddy：[docs/workbuddy.md](./docs/workbuddy.md)
 
 ---
 

@@ -2,20 +2,156 @@
 
 export const SERVER_INFO = {
   name: 'weread-reader',
-  version: '0.2.2-images',
+  version: '0.3.0-official+images',
 }
 
 export const TOOLS = [
   {
     name: 'weread_server_info',
     description:
-      'ALWAYS call this first to verify you are talking to the image-capable Weread MCP (v0.2.2+). Returns version and whether ImageContent chapter tools are available. If this tool is missing, the ChatGPT connector is still bound to an old tool snapshot — delete and re-add the connector.',
+      'ALWAYS call this first to verify the Weread MCP build. Returns version (expect 0.3.0-official+images), chapter ImageContent support, and whether the official WEREAD_API_KEY (wrk-) is configured for reading stats/notes/search.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'weread_status',
-    description: 'Check whether WeChat Reading (微信读书) is logged in on this machine.',
+    description:
+      'Check QR/cookie login (for chapter HTML/images) and official API Key status (for reading stats/notes/search).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'weread_set_official_key',
+    description:
+      'Save official WEREAD API Key (wrk-…) to ~/.weread-reader/official-api-key.txt for reading stats, notebooks, search, progress, reviews, recommendations. Get the key at https://weread.qq.com/r/weread-skills',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        apiKey: { type: 'string', description: 'wrk-… key from weread.qq.com/r/weread-skills' },
+      },
+      required: ['apiKey'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_reading_stats',
+    description:
+      'Official reading statistics: total time, days, top books, category preference. mode=weekly|monthly|annually|overall (default monthly). Durations from API are seconds; tool also returns human strings like "X小时Y分钟". Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          description: 'weekly | monthly | annually | overall. Default monthly.',
+        },
+        baseTime: {
+          type: 'integer',
+          description: 'Optional Unix timestamp inside the period to query; 0 = current period.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_search_books',
+    description: 'Search the Weread store by keyword (official /store/search). Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword: { type: 'string' },
+        scope: { type: 'integer', description: 'Search scope, default 10' },
+        context: { type: 'string', description: 'User question context for the gateway' },
+      },
+      required: ['keyword'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_get_progress',
+    description:
+      'Official per-book reading progress and cumulative reading time (seconds). progress is 0–100 integer percent. Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: { bookId: { type: 'string' } },
+      required: ['bookId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_list_notebooks',
+    description:
+      'List books that have personal notes (official notebooks overview with note/review/bookmark counts). Paginate with lastSort. Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        count: { type: 'integer', description: 'Page size 1–100, default 50' },
+        lastSort: { type: 'integer', description: 'Cursor from previous page' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_get_book_notes',
+    description:
+      'Export personal highlights + thoughts/reviews for one book (bookmarklist + review/list/mine). Bookmarks content is not exportable by official API. Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: { bookId: { type: 'string' } },
+      required: ['bookId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_list_reviews',
+    description: 'Public reviews for a book (official /review/list). Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bookId: { type: 'string' },
+        count: { type: 'integer' },
+      },
+      required: ['bookId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_recommend_books',
+    description:
+      'Personalized recommendations, or similar books when bookId is set. Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bookId: { type: 'string', description: 'Optional; if set, similar books' },
+        context: { type: 'string' },
+        count: { type: 'integer' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_hot_bookmarks',
+    description: 'Popular underlines/hot bookmarks for a book or chapter. Requires WEREAD_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bookId: { type: 'string' },
+        chapterUid: { type: 'integer', description: '0 = all chapters' },
+      },
+      required: ['bookId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'weread_official_call',
+    description:
+      'Advanced: call an allowlisted official gateway api_name with flat params (skill_version injected). Prefer dedicated tools when available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        apiName: { type: 'string', description: 'e.g. /readdata/detail' },
+        params: { type: 'object', description: 'Flat business params (not nested under params)' },
+      },
+      required: ['apiName'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'weread_list_bookshelf',
@@ -197,11 +333,60 @@ export function createMcpHandler(service) {
             name: SERVER_INFO.name,
             version: SERVER_INFO.version,
             imageCapable: true,
+            officialApi: service.officialStatus(),
+            chapterAuth: 'cookie/QR via Start Weread.command',
+            officialAuth: 'WEREAD_API_KEY wrk- via weread_set_official_key or ~/.weread-reader/official-api-key.txt',
             tools: TOOLS.map(t => t.name),
-            note: 'If ChatGPT only lists 5 old tools without weread_server_info / weread_get_chapter_images, delete the Connectors entry and re-add the Tunnel connector, then start a new chat.',
+            note: 'If ChatGPT only lists old tools, delete/re-add the Tunnel connector and start a new chat.',
           })
         case 'weread_status':
-          return textResult(service.status())
+          return textResult({
+            ...service.status(),
+            official: service.officialStatus(),
+          })
+        case 'weread_set_official_key':
+          return textResult(service.setOfficialKey(String(args.apiKey || '')))
+        case 'weread_reading_stats':
+          return textResult(await service.readingStats({
+            mode: args.mode,
+            baseTime: args.baseTime,
+          }))
+        case 'weread_search_books':
+          return textResult(await service.searchBooks({
+            keyword: args.keyword,
+            scope: args.scope,
+            context: args.context,
+          }))
+        case 'weread_get_progress':
+          return textResult(await service.bookProgress(String(args.bookId || '')))
+        case 'weread_list_notebooks':
+          return textResult(await service.listNotebooks({
+            count: args.count,
+            lastSort: args.lastSort,
+          }))
+        case 'weread_get_book_notes':
+          return textResult(await service.bookNotes(String(args.bookId || '')))
+        case 'weread_list_reviews':
+          return textResult(await service.bookReviews({
+            bookId: args.bookId,
+            count: args.count,
+          }))
+        case 'weread_recommend_books':
+          return textResult(await service.recommendBooks({
+            bookId: args.bookId,
+            context: args.context,
+            count: args.count,
+          }))
+        case 'weread_hot_bookmarks':
+          return textResult(await service.hotBookmarks({
+            bookId: args.bookId,
+            chapterUid: args.chapterUid,
+          }))
+        case 'weread_official_call':
+          return textResult(await service.officialCall(
+            String(args.apiName || ''),
+            args.params && typeof args.params === 'object' ? args.params : {},
+          ))
         case 'weread_list_bookshelf': {
           const shelf = await service.shelf({ patient: Boolean(args.patient) })
           return textResult({

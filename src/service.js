@@ -5,6 +5,7 @@ import { clearSession, loadSession, saveSession } from './store.js'
 import * as weread from './weread/client.js'
 import { fetchImageBatch } from './weread/images.js'
 import { createQrSession, finishLoginFromInfo, pollLoginInfo, refreshCookie } from './weread/login.js'
+import * as official from './weread/official.js'
 
 const COOKIE_REFRESH_MS = 45 * 60 * 1000
 const MAX_BATCH = 40
@@ -348,6 +349,111 @@ export function createService() {
       }
 
       return result
+    },
+
+    // ——— Official Agent Gateway (wrk- API Key; stats / notes / search / …) ———
+
+    officialStatus() {
+      return official.officialKeyStatus()
+    },
+
+    setOfficialKey(key) {
+      return official.saveOfficialApiKey(key)
+    },
+
+    clearOfficialKey() {
+      return official.clearOfficialApiKey()
+    },
+
+    async officialCall(apiName, params = {}) {
+      const name = String(apiName || '').trim()
+      if (!official.OFFICIAL_APIS.includes(name) && name !== '/_list') {
+        throw new Error(`不允许的 api_name：${name}。允许：${official.OFFICIAL_APIS.join(', ')}`)
+      }
+      return official.officialGateway(name, params && typeof params === 'object' ? params : {})
+    },
+
+    async readingStats({ mode = 'monthly', baseTime } = {}) {
+      const params = { mode: String(mode || 'monthly') }
+      if (baseTime != null && baseTime !== '') params.baseTime = Number(baseTime)
+      const data = await official.officialGateway('/readdata/detail', params)
+      return official.summarizeReadingStats(data, params.mode)
+    },
+
+    async searchBooks({ keyword, scope = 10, context = '' } = {}) {
+      const kw = String(keyword || '').trim()
+      if (!kw) throw new Error('需要 keyword')
+      const data = await official.officialGateway('/store/search', {
+        keyword: kw,
+        scope: Number(scope) || 10,
+        context: String(context || kw),
+      })
+      return data
+    },
+
+    async bookProgress(bookId) {
+      const id = String(bookId || '').trim()
+      if (!id) throw new Error('需要 bookId')
+      const data = await official.officialGateway('/book/getprogress', { bookId: id })
+      return official.summarizeProgress(data)
+    },
+
+    async officialBookInfo(bookId) {
+      const id = String(bookId || '').trim()
+      if (!id) throw new Error('需要 bookId')
+      return official.officialGateway('/book/info', { bookId: id })
+    },
+
+    async listNotebooks({ count = 50, lastSort } = {}) {
+      const params = { count: Math.min(100, Math.max(1, Number(count) || 50)) }
+      if (lastSort != null && lastSort !== '') params.lastSort = Number(lastSort)
+      return official.officialGateway('/user/notebooks', params)
+    },
+
+    async bookNotes(bookId) {
+      const id = String(bookId || '').trim()
+      if (!id) throw new Error('需要 bookId')
+      const [bookmarks, reviews] = await Promise.all([
+        official.officialGateway('/book/bookmarklist', { bookId: id }).catch((e) => ({
+          error: e instanceof Error ? e.message : String(e),
+        })),
+        official.officialGateway('/review/list/mine', { bookId: id }).catch((e) => ({
+          error: e instanceof Error ? e.message : String(e),
+        })),
+      ])
+      return { bookId: id, bookmarks, reviews }
+    },
+
+    async bookReviews({ bookId, count = 20 } = {}) {
+      const id = String(bookId || '').trim()
+      if (!id) throw new Error('需要 bookId')
+      return official.officialGateway('/review/list', {
+        bookId: id,
+        count: Math.min(50, Math.max(1, Number(count) || 20)),
+      })
+    },
+
+    async recommendBooks({ bookId, context = '给我推荐几本书', count = 12 } = {}) {
+      const id = String(bookId || '').trim()
+      const ctx = String(context || '给我推荐几本书')
+      if (id) {
+        return official.officialGateway('/book/similar', {
+          bookId: id,
+          context: ctx,
+          count: Number(count) || 12,
+          maxIdx: 0,
+        })
+      }
+      return official.officialGateway('/book/recommend', { context: ctx })
+    },
+
+    async hotBookmarks({ bookId, chapterUid = 0 } = {}) {
+      const id = String(bookId || '').trim()
+      if (!id) throw new Error('需要 bookId')
+      return official.officialGateway('/book/bestbookmarks', {
+        bookId: id,
+        chapterUid: Number(chapterUid) || 0,
+      })
     },
   }
 }
