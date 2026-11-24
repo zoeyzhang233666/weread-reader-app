@@ -1,0 +1,28 @@
+{
+  "admin_ui": {
+    "open_browser": false
+  },
+  "config_version": 1,
+  "control_plane": {
+    "api_key": "env:CONTROL_PLANE_API_KEY",
+    "base_url": "https://api.openai.com",
+    "tunnel_id": "tunnel_6b052c37078c8191afe660304703dd84"
+  },
+  "health": {
+    "listen_addr": "127.0.0.1:0",
+    "url_file": "/Users/edy/Library/Application Support/tunnel-client/health/weread-local.url"
+  },
+  "log": {
+    "file": "/Users/edy/Library/Application Support/tunnel-client/logs/weread-local.log",
+    "format": "json",
+    "level": "info"
+  },
+  "mcp": {
+    "server_urls": [
+      {
+        "channel": "main",
+        "url": "http://127.0.0.1:17831/mcp"
+      }
+    ]
+  }
+}

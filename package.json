@@ -1,0 +1,19 @@
+{
+  "name": "weread-reader-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone WeChat Reading reader + local MCP for Cursor / ChatGPT tunnel",
+  "bin": {
+    "weread-reader": "./scripts/weread-reader.mjs",
+    "weread-reader-mcp": "./src/server/mcp-stdio.js"
+  },
+  "scripts": {
+    "start": "node src/server/index.js",
+    "mcp": "node src/server/mcp-stdio.js",
+    "open": "node scripts/open.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

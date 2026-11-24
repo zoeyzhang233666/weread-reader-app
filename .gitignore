@@ -1,0 +1,13 @@
+node_modules/
+.vendor/
+*.log
+.DS_Store
+dist/
+src-tauri/target/
+.env
+.env.*
+*.pem
+*.key
+**/runtime-redacted.log
+**/doctor-redacted.txt
+tunnel.pid
