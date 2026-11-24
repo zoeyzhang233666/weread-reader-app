@@ -24,7 +24,7 @@ export function sanitizeFilename(name) {
   return cleaned || 'weread'
 }
 
-export function buildChaptersMarkdown({ bookTitle, author = '', chapters = [] }) {
+export function buildChaptersMarkdown({ bookTitle, author = '', chapters = [], rich = false } = {}) {
   const lines = [
     `# ${bookTitle || 'Untitled'}`,
     '',
@@ -32,13 +32,18 @@ export function buildChaptersMarkdown({ bookTitle, author = '', chapters = [] })
   if (author) lines.push(`- 作者：${author}`)
   lines.push(`- 导出时间：${new Date().toISOString().slice(0, 19).replace('T', ' ')}`)
   lines.push(`- 章节数：${chapters.length}`)
+  if (rich) lines.push('- 模式：富文本（含图片引用 / 原生表格）')
   lines.push('')
 
   for (const chapter of chapters) {
     lines.push(`## ${chapter.title || '未命名章节'}`)
     lines.push('')
-    const body = String(chapter.text || '').trim()
-    lines.push(body || '_（本章无正文）_')
+    if (rich && chapter.markdown) {
+      lines.push(String(chapter.markdown).trim() || '_（本章无正文）_')
+    } else {
+      const body = String(chapter.text || '').trim()
+      lines.push(body || '_（本章无正文）_')
+    }
     lines.push('')
   }
 

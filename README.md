@@ -83,9 +83,13 @@
 |------|------|
 | `weread_status` | 是否已登录 |
 | `weread_list_bookshelf` | 书架 |
+| `weread_get_book_info` | 书籍元数据（字数/作者/出版社/ISBN/章节数等） |
 | `weread_list_chapters` | 某书目录 |
-| `weread_get_chapter` | 单章正文 |
-| `weread_export_chapters` | 导出多章 Markdown（支持 `range: "1-10"`） |
+| `weread_get_chapter` | 单章正文；`rich=true` 含图文块/表格；`includeImages=true` 以 MCP ImageContent 返回图片字节（可分页） |
+| `weread_get_chapter_images` | 分批拉取章节图片（表格图、结构式、流程图等），供模型直接看图 |
+| `weread_export_chapters` | 导出多章 Markdown（`range: "1-10"`）；`rich=true` 保留图片链接与原生表格 |
+
+化工手册类 EPUB 的表格常被做成**图片**而非 HTML `<table>`。默认纯文本接口会丢掉这些图；请用 `rich` / `includeImages` / `weread_get_chapter_images`。详见 [docs/rich-content.md](./docs/rich-content.md)。
 
 ### Cursor / Claude Desktop（stdio，可选）
 

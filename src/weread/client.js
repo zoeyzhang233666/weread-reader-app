@@ -1,6 +1,7 @@
 import { calcHash, currentTime, sign } from './sign.js'
 import { chk, dH, dS, dT } from './decrypt.js'
 import { mergeCookieHeader, parseCookieHeader } from './cookie.js'
+import { stripHtml } from '../chapterHtml.js'
 
 const BASE = 'https://weread.qq.com'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -187,35 +188,43 @@ async function fetchShard(cookie, shard, bookId, chapterUid, st) {
   return chk(raw)
 }
 
-function stripHtml(html) {
-  return String(html || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/\r/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
-export async function getChapterContent(cookie, bookId, chapterUid) {
-  const info = await getJson(cookie, '/web/book/info', { bookId })
-  if (unauthorized(info.status, info.data)) {
-    throw new Error('登录已过期，请重新扫码登录。')
-  }
-  const biz = info.data?.errCode ?? info.data?.errcode
+export async function getBookInfo(cookie, bookId) {
+  const { status, data } = await getJson(cookie, '/web/book/info', { bookId })
+  if (unauthorized(status, data)) throw new Error('登录已过期，请重新扫码登录。')
+  if (status >= 400) throw new Error(`Weread HTTP ${status}`)
+  const biz = data?.errCode ?? data?.errcode
   if (biz === -2012 || biz === -2010 || biz === -2013 || biz === -12013) {
     throw new Error('登录已过期，请重新扫码登录。')
   }
-  const format = info.data?.format || ''
+  if (biz != null && biz !== 0 && !data?.title && !data?.format) {
+    throw new Error(data?.errMsg || data?.errmsg || `Weread book info error ${biz}`)
+  }
+  return data || {}
+}
+
+export function normalizeBookInfo(data = {}, { chapterCount } = {}) {
+  return {
+    bookId: data.bookId,
+    title: data.title || '',
+    author: data.author || '',
+    publisher: data.publisher || '',
+    isbn: data.isbn || data.isbn13 || '',
+    publishTime: data.publishTime || '',
+    category: data.category || '',
+    format: data.format || '',
+    intro: data.intro || '',
+    cover: data.cover || '',
+    totalWords: Number(data.totalWords) || 0,
+    price: data.price,
+    chapterCount: chapterCount ?? data.chapterTotal ?? data.totalChapterCount ?? data.chapterSize ?? null,
+    lastChapterIdx: data.lastChapterIdx ?? null,
+    maxFreeChapter: data.maxFreeChapter ?? null,
+  }
+}
+
+export async function getChapterContent(cookie, bookId, chapterUid) {
+  const info = await getBookInfo(cookie, bookId)
+  const format = info.format || ''
   if (!format) {
     throw new Error('Could not read book format. The chapter may be paid, restricted, or the login is weak.')
   }
@@ -232,7 +241,7 @@ export async function getChapterContent(cookie, bookId, chapterUid) {
       throw new Error('Chapter shards failed checksum. Try re-login, or the chapter may be paid/trial-only.')
     }
     const html = dH(r0 + r1 + r3)
-    return { format, text: stripHtml(html), html, style: r2 ? dS(r2) : '' }
+    return { format, text: stripHtml(html), html, style: r2 ? dS(r2) : '', bookInfo: info }
   }
 
   if (format === 'txt') {
@@ -244,7 +253,7 @@ export async function getChapterContent(cookie, bookId, chapterUid) {
       throw new Error('Chapter shards failed checksum. Try re-login, or the chapter may be paid/trial-only.')
     }
     const content = dT(t0 + t1)
-    return { format, text: content.trim(), html: '', style: '' }
+    return { format, text: content.trim(), html: '', style: '', bookInfo: info }
   }
 
   throw new Error(`Unsupported Weread format: ${format}`)

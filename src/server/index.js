@@ -94,8 +94,28 @@ async function handleApi(req, res, path) {
       sendJson(res, 200, await service.chapters(bookId))
       return
     }
+    if (path === '/api/book/info' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      sendJson(res, 200, await service.bookInfo(url.searchParams.get('bookId')))
+      return
+    }
     if (path === '/api/chapter' && req.method === 'GET') {
       const url = new URL(req.url || '/', `http://${HOST}`)
+      const rich = url.searchParams.get('rich') === '1'
+      if (rich) {
+        sendJson(res, 200, await service.chapterRich(
+          url.searchParams.get('bookId'),
+          url.searchParams.get('chapterUid'),
+          {
+            includeHtml: url.searchParams.get('html') === '1',
+            includeBlocks: true,
+            includeImages: url.searchParams.get('images') === '1',
+            imageOffset: url.searchParams.get('imageOffset'),
+            imageLimit: url.searchParams.get('imageLimit'),
+          },
+        ))
+        return
+      }
       sendJson(res, 200, await service.chapter(
         url.searchParams.get('bookId'),
         url.searchParams.get('chapterUid'),
