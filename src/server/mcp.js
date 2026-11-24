@@ -2,7 +2,7 @@
 
 export const SERVER_INFO = {
   name: 'weread-reader',
-  version: '0.2.0',
+  version: '0.2.1',
 }
 
 export const TOOLS = [
@@ -53,31 +53,31 @@ export const TOOLS = [
   {
     name: 'weread_get_chapter',
     description:
-      'Fetch one chapter. Default returns plain text (compatible). Set rich=true for ordered blocks, native HTML tables, image URLs; set includeImages=true to also return MCP ImageContent (base64) in batches.',
+      'Fetch one chapter WITH figures/tables. Chem handbooks store property tables as images — this tool returns ordered text + MCP ImageContent (JPEG/PNG) by default so you can read those tables. If imagesHasMore=true, call again with a higher imageOffset (or use weread_get_chapter_images). Set plain=true only when you want text with no images.',
     inputSchema: {
       type: 'object',
       properties: {
         bookId: { type: 'string' },
         chapterUid: { type: 'string' },
-        rich: {
+        plain: {
           type: 'boolean',
-          description: 'Include ordered blocks / markdown with image refs & HTML tables. Default false.',
+          description: 'If true, return only stripped plain text (no images/blocks). Default false.',
         },
         includeHtml: {
           type: 'boolean',
-          description: 'Include raw chapter HTML when available (epub/pdf).',
+          description: 'Include raw chapter HTML when available (epub/pdf). Default false.',
         },
         includeImages: {
           type: 'boolean',
-          description: 'Attach image bytes as MCP ImageContent (batched). Implies rich structure.',
+          description: 'Attach image bytes as MCP ImageContent. Default true (set false to skip bytes but still keep image URLs in markdown/blocks).',
         },
         imageOffset: {
           type: 'integer',
-          description: '0-based offset into chapter images when includeImages=true. Default 0.',
+          description: '0-based offset into chapter images. Default 0.',
         },
         imageLimit: {
           type: 'integer',
-          description: 'Max images to return as ImageContent (1-10, default 4). Use offset to page.',
+          description: 'Max images as ImageContent this call (1-10, default 4). Page with imageOffset.',
         },
       },
       required: ['bookId', 'chapterUid'],
@@ -87,7 +87,7 @@ export const TOOLS = [
   {
     name: 'weread_get_chapter_images',
     description:
-      'Batch-fetch chapter images (tables/structures/figures rendered as pictures) as MCP ImageContent. Use imageOffset/imageLimit to page. Does not OCR.',
+      'REQUIRED for chem books when tables/structures are pictures: batch-fetch chapter images as MCP ImageContent. Page with imageOffset/imageLimit until imagesHasMore=false. Prefer this after weread_get_chapter if more figures remain. Does not OCR.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -103,7 +103,7 @@ export const TOOLS = [
   {
     name: 'weread_export_chapters',
     description:
-      'Export one or more chapters as Markdown. Prefer range like "1-10" or pass chapterUids. Set rich=true to keep image refs and HTML tables. Set includeImages=true to also attach a batch of ImageContent.',
+      'Export chapters as Markdown WITH image markdown links and native HTML tables by default (chem tables often are images — follow up with weread_get_chapter_images to actually see table pixels). Set plain=true for text-only. Set includeImages=true to also attach a first batch of ImageContent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -119,13 +119,13 @@ export const TOOLS = [
           items: { type: 'string' },
           description: 'Explicit chapterUid list (optional if range is set)',
         },
-        rich: {
+        plain: {
           type: 'boolean',
-          description: 'Markdown keeps ![img](url) and native tables. Default false.',
+          description: 'Text-only markdown (strip figures). Default false.',
         },
         includeImages: {
           type: 'boolean',
-          description: 'Also return ImageContent batch for figures (implies rich markdown).',
+          description: 'Also return ImageContent batch for figures. Default false (use weread_get_chapter_images for paging).',
         },
         imageOffset: { type: 'integer' },
         imageLimit: { type: 'integer', description: '1-10, default 4' },
@@ -213,26 +213,27 @@ export function createMcpHandler(service) {
           })
         }
         case 'weread_get_chapter': {
-          const rich = Boolean(args.rich || args.includeHtml || args.includeImages)
-          if (!rich) {
+          // Default = rich + images. ChatGPT rarely passes optional flags.
+          if (args.plain === true) {
             const body = await service.chapter(String(args.bookId || ''), String(args.chapterUid || ''))
             return textResult({
               text: body.text,
               format: body.format,
             })
           }
+          const includeImages = args.includeImages !== false
           const body = await service.chapterRich(
             String(args.bookId || ''),
             String(args.chapterUid || ''),
             {
               includeHtml: Boolean(args.includeHtml),
               includeBlocks: true,
-              includeImages: Boolean(args.includeImages),
+              includeImages,
               imageOffset: args.imageOffset,
               imageLimit: args.imageLimit,
             },
           )
-          return args.includeImages ? richResult(body) : textResult(body)
+          return includeImages ? richResult(body) : textResult(body)
         }
         case 'weread_get_chapter_images': {
           const body = await service.chapterImages(
@@ -243,7 +244,6 @@ export function createMcpHandler(service) {
               imageLimit: args.imageLimit,
             },
           )
-          // Focused image payload: omit full html/text dump noise
           const focused = {
             bookId: body.bookId,
             chapterUid: body.chapterUid,
@@ -255,6 +255,9 @@ export function createMcpHandler(service) {
             imagesReturned: body.imagesReturned,
             imagesHasMore: body.imagesHasMore,
             imageErrors: body.imageErrors,
+            hint: body.imagesHasMore
+              ? `Call again with imageOffset=${body.imageOffset + body.imagesReturned} to fetch the next batch.`
+              : 'All images in this page window returned (or none left).',
             blocks: (body.blocks || []).filter(b => b.type === 'image' || b.type === 'table'),
             nearbyText: (body.blocks || [])
               .filter(b => b.type === 'text')
@@ -266,18 +269,20 @@ export function createMcpHandler(service) {
           return richResult(focused)
         }
         case 'weread_export_chapters': {
+          const plain = args.plain === true
+          const includeImages = Boolean(args.includeImages)
           const body = await service.exportChapters({
             bookId: String(args.bookId || ''),
             bookTitle: String(args.bookTitle || ''),
             author: String(args.author || ''),
             range: String(args.range || ''),
             chapterUids: Array.isArray(args.chapterUids) ? args.chapterUids : [],
-            rich: Boolean(args.rich || args.includeImages),
-            includeImages: Boolean(args.includeImages),
+            rich: !plain,
+            includeImages,
             imageOffset: args.imageOffset,
             imageLimit: args.imageLimit,
           })
-          if (args.includeImages) {
+          if (includeImages) {
             return richResult({
               count: body.count,
               imageCount: body.imageCount,
@@ -285,6 +290,9 @@ export function createMcpHandler(service) {
               imageErrors: body.imageErrors,
               markdown: body.markdown,
               images: body.images,
+              hint: body.imagesHasMore
+                ? 'More figures remain — call weread_get_chapter_images with higher imageOffset.'
+                : undefined,
             })
           }
           return textResult(body.markdown)

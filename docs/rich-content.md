@@ -42,14 +42,31 @@
 | 元数据 | 出版社化学工业出版社，ISBN 9787122211323，约 12.4 万字，49 章 |
 | 兼容 | 无 `rich` 时仍只返回 `{ text, format }` |
 
+## ChatGPT 仍读不到图？先查是不是旧进程
+
+本机若开着**旧版** `Weread Reader.app`（打包时嵌在 `dist/macos-stage/.../Resources/app` 的源码），MCP 可能只有 5 个旧工具、默认纯文本。自检：
+
+```sh
+curl -s -X POST http://127.0.0.1:17831/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | python3 -c 'import sys,json; print([t["name"] for t in json.load(sys.stdin)["result"]["tools"]])'
+```
+
+应能看到 `weread_get_book_info`、`weread_get_chapter_images`。若没有：杀掉 17831 端口进程，再启动**仓库最新源码**或重新打包后的 App，并**重启隧道 + 新开 ChatGPT 对话**（连接器会缓存旧 tools 列表）。
+
+自 v0.2.1 起：`weread_get_chapter` **默认**返回图文块 + 一批 ImageContent（不必再传 `rich`/`includeImages`）。只要纯文字时才设 `plain=true`。
+
 ## 部署更新
 
 ```sh
-cd weread-reader-app
+cd /Users/edy/weread-reader-app
 git pull
-# 停掉旧进程后重启（打包 App 则重新打开 App；源码则：）
+# 停掉旧进程
+lsof -tiTCP:17831 -sTCP:LISTEN | xargs kill
 node src/server/index.js
-# 若用 OpenAI tunnel：重启 Start Weread Tunnel.command
+# 重启 tunnel/Start Weread Tunnel.command
+# ChatGPT：新开对话再试
 ```
 
 重新打包安装包：

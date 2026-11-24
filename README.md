@@ -73,9 +73,11 @@ tunnel_6b052c37078c8191afe660304703dd84
 
 > 列出我的微信读书书架
 
-看图/表格（化工书）再加一句：
+看图/表格（化工书，表格多为图片）：
 
-> 用 weread_get_chapter_images 拉取《精细化工配方常用原料手册》章节 5 的图片，每次 4 张
+> 读取 bookId 923588 的章节 17（2.10 增塑剂），把表格图片也拉出来；若还有剩余图片继续分页
+
+自 v0.2.1 起，`weread_get_chapter` **默认就会返回图片**（MCP ImageContent）。若仍只有纯文字，多半连到了旧进程——见 [docs/rich-content.md](./docs/rich-content.md)。
 
 ### D. 用完怎么关
 
