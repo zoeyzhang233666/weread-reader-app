@@ -33,7 +33,14 @@ curl -s -X POST http://127.0.0.1:17831/mcp \
   | python3 -c 'import sys,json; print([t["name"] for t in json.load(sys.stdin)["result"]["tools"]])'
 ```
 
-若 ChatGPT 仍只列 5 个旧接口：**新开一条对话**（或删了重加 Connectors 里的 `read`）。旧对话会缓存 tools 列表。
+若 ChatGPT 仍只列 5 个旧接口、且描述还是 “Fetch plain text for one chapter”：
+
+这是 **ChatGPT 连接器缓存了创建时的工具快照**，不是本机没更新。处理：
+
+1. 确认本机 `tools/list` 已有 `weread_server_info`、`weread_get_chapter_images`（见上）  
+2. 双击 `tunnel/Start Weread Tunnel.command`（隧道必须在 MCP 起来之后再开）  
+3. ChatGPT → Connectors → **删除** 旧的 `read` → 再添加自定义 MCP → Tunnel → 选同一 Tunnel ID  
+4. **全新对话**，先让 GPT 调用 `weread_server_info`（应返回 `0.2.2-images`）
 
 ### B. 启动 OpenAI 隧道（让网页 ChatGPT 连上本机）
 

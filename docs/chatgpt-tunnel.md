@@ -97,20 +97,21 @@ curl -s "$(cat "$HOME/Library/Application Support/tunnel-client/health/weread-lo
 ## 二、Mac 日常启动顺序
 
 1. **先开代理/VPN**（能访问 OpenAI）  
-2. **开 Weread Reader**，确认已登录  
-3. **双击** `tunnel/Start Weread Tunnel.command`  
+2. **先开 Weread**：双击仓库根目录 `Start Weread.command`，确认已登录  
+3. **再开隧道**：双击 `tunnel/Start Weread Tunnel.command`  
    - 粘贴 Runtime API Key  
-   - 看到 `🟢 tunnel-client started` / `tunnel metadata fetched`  
+   - 看到 `tunnel metadata fetched` / `🟢 tunnel-client started`  
    - **不要关这个终端窗口**  
 4. 打开 [ChatGPT → 设置 → Connectors](https://chatgpt.com/#settings/Connectors)  
-   - 若还没有：添加自定义 MCP → 连接选 **隧道** → 选上述 Tunnel ID → 认证选「无需身份验证」→ 勾选风险提示 → 创建  
-   - 若已有（例如名叫 `read`）：打开开关即可  
-5. **新开一条聊天**，在工具/插件里启用该连接器  
-6. 试一句：
+   - **升级过 MCP 工具后必须删掉旧连接器再加一次**（否则会永远看到旧的 5 个「纯文本」工具）  
+   - 添加自定义 MCP → 连接选 **隧道** → 选上述 Tunnel ID → 认证「无需」→ 创建  
+5. **全新聊天**，启用连接器，先问：
 
-> 列出我的微信读书书架，并把《某书》第 1-3 章导出成 Markdown。
+> 调用 weread_server_info，告诉我 version
 
-停止：在隧道终端按 `Ctrl+C`；Weread 可继续留着，或退出 App。
+应看到 `0.2.2-images` 以及 `weread_get_chapter_images`。再读化工书章节图。
+
+停止：隧道窗口 `Ctrl+C`；Weread 可留着。
 
 ---
 

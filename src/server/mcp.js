@@ -2,10 +2,16 @@
 
 export const SERVER_INFO = {
   name: 'weread-reader',
-  version: '0.2.1',
+  version: '0.2.2-images',
 }
 
 export const TOOLS = [
+  {
+    name: 'weread_server_info',
+    description:
+      'ALWAYS call this first to verify you are talking to the image-capable Weread MCP (v0.2.2+). Returns version and whether ImageContent chapter tools are available. If this tool is missing, the ChatGPT connector is still bound to an old tool snapshot — delete and re-add the connector.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
   {
     name: 'weread_status',
     description: 'Check whether WeChat Reading (微信读书) is logged in on this machine.',
@@ -186,6 +192,14 @@ export function createMcpHandler(service) {
   async function callTool(name, args = {}) {
     try {
       switch (name) {
+        case 'weread_server_info':
+          return textResult({
+            name: SERVER_INFO.name,
+            version: SERVER_INFO.version,
+            imageCapable: true,
+            tools: TOOLS.map(t => t.name),
+            note: 'If ChatGPT only lists 5 old tools without weread_server_info / weread_get_chapter_images, delete the Connectors entry and re-add the Tunnel connector, then start a new chat.',
+          })
         case 'weread_status':
           return textResult(service.status())
         case 'weread_list_bookshelf': {
