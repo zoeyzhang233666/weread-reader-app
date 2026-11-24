@@ -1,147 +1,142 @@
 # Weread Reader App
 
-独立版**微信读书**阅读器（Mac Apple Silicon / Windows x64）+ **本机 MCP**，可被 Cursor / Claude Desktop / **网页版 ChatGPT（OpenAI Secure Tunnel）**调用。
+独立版**微信读书**阅读器（Mac Apple Silicon / Windows x64）+ **本机 MCP**，给网页版 ChatGPT 用。
 
-- 扫码登录、书架、整页翻页、复制本章 / 按区间导出多章（如 `1-10`）
-- 启动后自动提供：`http://127.0.0.1:17831`（UI）与 `http://127.0.0.1:17831/mcp`（MCP）
-- 登录态保存在本机 `~/.weread-reader/`（Windows：`%USERPROFILE%\.weread-reader\`）
-
-> 非官方微信读书接口，仅供个人已购/可读书籍使用；接口可能变更。
+> 仓库（私有）：https://github.com/zoeyzhang233666/weread-reader-app  
+> 安装包：https://github.com/zoeyzhang233666/weread-reader-app/releases
 
 ---
 
-## 5 分钟速查（下次直接照这个）
+## 下次从零启动（照抄即可）
 
-| 步骤 | 做什么 |
-|------|--------|
-| 1 | 打开 **Weread Reader**（Mac `.app` / DMG，或 Win `WereadReader.bat`） |
-| 2 | 浏览器确认已开 <http://127.0.0.1:17831>，**扫码登录** |
-| 3 | 确认系统代理/VPN 可用（本机需能访问 `api.openai.com`） |
-| 4 | 双击 `tunnel/Start Weread Tunnel.command`，粘贴 **Runtime API Key**（`sk-…`） |
-| 5 | ChatGPT → [Connectors](https://chatgpt.com/#settings/Connectors) → 启用名为 `read` 的自定义 MCP |
-| 6 | 新开对话，让 GPT：「列出我的微信读书书架」 |
+你每次要用 ChatGPT 读微信读书，只做这 **两件事开着**，再打开 ChatGPT。
 
-两样东西别混：
+### A. 启动微信读书服务（本机阅读器 + MCP）
 
-| 名称 | 长什么样 | 哪里拿 |
-|------|----------|--------|
-| **Tunnel ID** | `tunnel_…` | [Platform → Tunnels](https://platform.openai.com/settings/organization/tunnels) |
-| **Runtime API Key** | `sk-…` | [Platform → API keys](https://platform.openai.com/settings/organization/api-keys)（需 **Tunnels Read + Use**，不要用 Admin Key） |
+**方式 1（推荐，有安装包时）**
 
-本仓库 `tunnel/profiles/weread-local.yaml` 里已写好 Tunnel ID；**Key 永远不落盘**，每次启动器里粘贴一次。
+1. 打开 [Releases](https://github.com/zoeyzhang233666/weread-reader-app/releases)  
+2. Mac 下 `WereadReader-*-mac-arm64.dmg` → 拖到「应用程序」→ 点开 **Weread Reader**  
+   （首次拦截：右键 App → 打开 → 仍要打开）  
+3. 浏览器应自动出现 <http://127.0.0.1:17831>  
+4. **扫码登录**微信读书（只需登录一次；登录态在 `~/.weread-reader/`）
 
----
-
-## 安装包
-
-若本地已有 `dist/` 构建产物：
-
-| 平台 | 文件 |
-|------|------|
-| Mac M 芯片 | `WereadReader-0.1.0-mac-arm64.dmg` 或 `.zip` |
-| Windows x64 | `WereadReader-0.1.0-win-x64.zip`（解压即用） |
-
-也可自行打包（需先下载 Node 运行时到 `.vendor/`，见下方「开发者」）：
+**方式 2（本机已有源码目录时）**
 
 ```sh
+cd /Users/edy/weread-reader-app
+node src/server/index.js
+```
+
+然后浏览器打开 <http://127.0.0.1:17831> 扫码。
+
+自检：
+
+```sh
+curl -s http://127.0.0.1:17831/health
+# 期望：{"ok":true,"loggedIn":true}
+```
+
+### B. 启动 OpenAI 隧道（让网页 ChatGPT 连上本机）
+
+1. **先开代理/VPN**（Clash 等系统代理），否则隧道连不上 `api.openai.com`  
+2. 在 Finder 打开本仓库的隧道文件夹：
+
+```text
+/Users/edy/weread-reader-app/tunnel/
+```
+
+3. 双击 **`Start Weread Tunnel.command`**  
+4. 粘贴 **Runtime API Key**（`sk-…`，输入不显示）  
+   - 获取：[Platform → API keys](https://platform.openai.com/settings/organization/api-keys)  
+   - 权限要有 **Tunnels Read + Use**；不要用 Admin Key  
+5. 看到类似 `tunnel metadata fetched` / `🟢 tunnel-client started` 后，**不要关这个窗口**
+
+Tunnel ID 已写在配置里（一般不用改）：
+
+```text
+tunnel_6b052c37078c8191afe660304703dd84
+```
+
+| 别混 | 长什么样 | 干什么 |
+|------|----------|--------|
+| Tunnel ID | `tunnel_…` | 告诉 ChatGPT 连哪条隧道 |
+| Runtime API Key | `sk-…` | 给 `tunnel-client` 登录 OpenAI（每次启动粘一次，不落盘） |
+
+### C. 在 ChatGPT 里用
+
+1. 打开 [ChatGPT → 设置 → Connectors](https://chatgpt.com/#settings/Connectors)  
+2. 启用你之前建好的连接器（名称多半是 **`read`**）  
+   - 若还没有：添加自定义 MCP → 连接选 **隧道** → 选上面的 Tunnel ID → 认证「无需」→ 勾选风险提示 → 创建  
+3. **新开一条聊天**，打开该工具/插件  
+4. 试一句：
+
+> 列出我的微信读书书架
+
+看图/表格（化工书）再加一句：
+
+> 用 weread_get_chapter_images 拉取《精细化工配方常用原料手册》章节 5 的图片，每次 4 张
+
+### D. 用完怎么关
+
+- 隧道窗口：`Ctrl+C` 或关掉终端  
+- Weread：退出 App；或源码模式在跑 `node` 的终端 `Ctrl+C`  
+- Windows 便携包：用 `Stop-WereadReader.bat`
+
+---
+
+## 详细文档（按需点开）
+
+| 文档 | 内容 |
+|------|------|
+| [docs/chatgpt-tunnel.md](./docs/chatgpt-tunnel.md) | 隧道、代理排错、验收命令、第一次加 Connectors |
+| [docs/rich-content.md](./docs/rich-content.md) | 图片/表格为什么会丢、`rich` / ImageContent 怎么用 |
+
+---
+
+## 安装包位置
+
+| 平台 | 文件（在 Release 或本地 `dist/`） |
+|------|------|
+| Mac M 芯片 | `WereadReader-0.1.0-mac-arm64.dmg` / `.zip` |
+| Windows x64 | `WereadReader-0.1.0-win-x64.zip` → 解压后双击 `WereadReader.bat` |
+
+本地重新打包：
+
+```sh
+cd /Users/edy/weread-reader-app
 ./scripts/build-macos-app.sh
 ./scripts/build-windows-portable.sh
 ```
 
-### Mac
-
-1. 打开 DMG，把 **Weread Reader** 拖进 Applications  
-2. 首次若提示未验证：右键 → 打开 → 仍要打开  
-3. 启动后自动打开阅读器页面；MCP 已在 `/mcp`
-
-### Windows
-
-1. 解压 zip，双击 `WereadReader.bat`  
-2. 停止用同目录 `Stop-WereadReader.bat`
-
 ---
 
-## 给网页版 ChatGPT 用（完整说明）
-
-详见 **[docs/chatgpt-tunnel.md](./docs/chatgpt-tunnel.md)**（含代理排错、验收命令）。
-
-摘要：
-
-1. Weread 已运行且已登录  
-2. 安装 [tunnel-client](https://github.com/openai/tunnel-client)（`brew install openai/tools/tunnel-client`，或沿用本机 Anki 那份）  
-3. 运行 `tunnel/Start Weread Tunnel.command`（会自动探测 macOS 系统代理，如 Clash `127.0.0.1:7897`）  
-4. ChatGPT 添加/启用 **Tunnel** 连接器，指向同一 Tunnel ID  
-5. **保持** Weread + tunnel 窗口不要关
-
-若出现「应用配置受到速率限制…也请检查隧道客户端」：优先检查 tunnel 是否真连上 OpenAI（日志里应有 `tunnel metadata fetched`，不应持续 `poll timed out`）。国内网络几乎一定要给 tunnel-client 配 **HTTPS 代理**。
-
----
-
-## MCP 工具
+## MCP 工具一览
 
 | Tool | 作用 |
 |------|------|
 | `weread_status` | 是否已登录 |
 | `weread_list_bookshelf` | 书架 |
-| `weread_get_book_info` | 书籍元数据（字数/作者/出版社/ISBN/章节数等） |
-| `weread_list_chapters` | 某书目录 |
-| `weread_get_chapter` | 单章正文；`rich=true` 含图文块/表格；`includeImages=true` 以 MCP ImageContent 返回图片字节（可分页） |
-| `weread_get_chapter_images` | 分批拉取章节图片（表格图、结构式、流程图等），供模型直接看图 |
-| `weread_export_chapters` | 导出多章 Markdown（`range: "1-10"`）；`rich=true` 保留图片链接与原生表格 |
+| `weread_get_book_info` | 元数据（字数/作者/出版社/ISBN/章节数） |
+| `weread_list_chapters` | 目录 |
+| `weread_get_chapter` | 单章；默认纯文本；`rich=true` 图文块；`includeImages=true` 带图片字节 |
+| `weread_get_chapter_images` | 分批拉章节图片（表格图等），模型可直接看 |
+| `weread_export_chapters` | 导出 Markdown；`rich=true` 保留图片链接 |
 
-化工手册类 EPUB 的表格常被做成**图片**而非 HTML `<table>`。默认纯文本接口会丢掉这些图；请用 `rich` / `includeImages` / `weread_get_chapter_images`。详见 [docs/rich-content.md](./docs/rich-content.md)。
-
-### Cursor / Claude Desktop（stdio，可选）
-
-```json
-{
-  "mcpServers": {
-    "weread-reader": {
-      "command": "node",
-      "args": ["/绝对路径/weread-reader-app/src/server/mcp-stdio.js"]
-    }
-  }
-}
-```
-
-先在网页 UI 扫码登录，再让 AI 调工具。
-
----
-
-## 开发者：从源码跑
-
-需要 Node.js 20+。
-
-```sh
-cd weread-reader-app
-node src/server/index.js
-# 另开：node scripts/open.mjs
-```
-
-端口：`WEREAD_PORT=17831`（默认）。
-
----
-
-## 目录结构（常用）
-
-```
-weread-reader-app/
-  src/server/          # HTTP UI + /mcp
-  src/weread/          # 登录 / 书架 / 正文
-  packaging/           # Mac/Win 启动脚本模板
-  scripts/             # 打包脚本
-  tunnel/              # ChatGPT Secure Tunnel 启动器与 profile
-  docs/chatgpt-tunnel.md
-  dist/                # 本地构建产物（不进 git）
-```
+端口默认 **17831**：UI `/` ，MCP `/mcp` ，健康检查 `/health`。
 
 ---
 
 ## 常见问题
 
-**书架空的？** 登录后等几秒再刷新；刚扫码时书架可能还在同步。
+**下次找不到怎么启动？**  
+回到本文最上面「下次从零启动」：先开 Weread（App 或 `node src/server/index.js`），再双击 `tunnel/Start Weread Tunnel.command`。
 
-**ChatGPT 加不上连接器？**  
-1) Weread `/health` 是否 `ok`；2) tunnel 是否在跑；3) 代理是否让 `api.openai.com` 通；4) 等 1 分钟再点「创建」（界面常把「隧道未连接」说成速率限制）。
+**ChatGPT 说速率限制 / 检查隧道？**  
+多半是隧道没连上：确认代理开着、隧道窗口还在、日志不是一直 `poll timed out`，等半分钟再试。
 
-**换 Tunnel ID？** 改 `tunnel/profiles/weread-local.yaml` 和 `tunnel/start_weread_tunnel.py` 里的 `TUNNEL=`，再重启启动器。
+**书架空的？**  
+扫码后等几秒刷新；刚登录书架可能还在同步。
+
+**换 Tunnel ID？**  
+改 `tunnel/profiles/weread-local.yaml` 和 `tunnel/start_weread_tunnel.py` 里的 ID，再重开隧道启动器。
