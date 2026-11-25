@@ -6,7 +6,7 @@ VENDOR="$ROOT/.vendor"
 DIST="$ROOT/dist"
 STAGE="$DIST/WereadReader-win-x64"
 NODE_ZIP="$VENDOR/node-win-x64.zip"
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 mkdir -p "$VENDOR" "$DIST"
 if [[ ! -f "$NODE_ZIP" ]]; then
