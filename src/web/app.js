@@ -7,6 +7,8 @@ const state = {
   chapterIdx: 0,
   chapterText: '',
   paragraphs: [],
+  blocks: [],
+  imageCount: 0,
   pages: [],
   pageIndex: 0,
   pageWidth: 0,
@@ -43,6 +45,7 @@ const els = {
 
 let toastTimer = 0
 let qrAbort = 0
+let pageReflowTimer = 0
 const pointer = { x: 0, y: 0, selecting: false }
 
 async function api(path, init = {}) {
@@ -95,10 +98,54 @@ function parseChapterRange(input, total) {
   return [...picked].sort((a, b) => a - b)
 }
 
-function paginateParagraphs(paragraphs, title, width, height, fontScale) {
+function proxyImageSrc(src) {
+  const value = String(src || '').trim()
+  if (!value) return ''
+  if (/^data:image\//i.test(value)) return value
+  return `/api/chapter/image?src=${encodeURIComponent(value)}`
+}
+
+function normalizeReaderBlocks(body = {}) {
+  const raw = Array.isArray(body.blocks) ? body.blocks : []
+  if (raw.length) {
+    return raw.map((block, index) => {
+      if (block?.type === 'image') {
+        return {
+          type: 'image',
+          key: `img-${block.index ?? index}`,
+          src: String(block.src || ''),
+          alt: String(block.alt || ''),
+          proxySrc: proxyImageSrc(block.src),
+        }
+      }
+      if (block?.type === 'table') {
+        return {
+          type: 'table',
+          key: `tbl-${index}`,
+          rows: Array.isArray(block.rows) ? block.rows : [],
+          text: block.markdown || '',
+        }
+      }
+      return {
+        type: 'text',
+        key: `txt-${index}`,
+        text: String(block?.text || ''),
+        role: block?.role || 'paragraph',
+      }
+    }).filter((b) => (b.type === 'text' ? Boolean(b.text.trim()) : true))
+  }
+  return (body.paragraphs || []).map((p, index) => ({
+    type: 'text',
+    key: `p-${index}`,
+    text: String(p.text || p || ''),
+    role: 'paragraph',
+  })).filter((b) => b.text.trim())
+}
+
+function paginateBlocks(blocks, title, width, height, fontScale) {
   const w = Math.max(1, Math.floor(width))
   const h = Math.max(1, Math.floor(height))
-  if (!paragraphs.length || w < 40 || h < 40) return paragraphs.length ? [paragraphs] : [[]]
+  if (!blocks.length || w < 40 || h < 40) return blocks.length ? [blocks] : [[]]
 
   const probe = document.createElement('div')
   probe.style.cssText = `position:fixed;left:-10000px;top:0;width:${w}px;height:${h}px;overflow:hidden;visibility:hidden;font-size:${16 * fontScale}px;line-height:1.85;font-family:Microsoft YaHei,PingFang SC,sans-serif;`
@@ -108,17 +155,50 @@ function paginateParagraphs(paragraphs, title, width, height, fontScale) {
   titleEl.style.cssText = 'margin:0 0 14px;font-size:1.05em;font-weight:600;'
   titleEl.textContent = title || ''
 
-  const makeP = (text) => {
-    const p = document.createElement('p')
-    p.style.cssText = 'margin:0 0 1em;white-space:pre-wrap;word-break:break-word;'
-    p.textContent = text
+  const makeNode = (block) => {
+    if (block.type === 'image') {
+      const wrap = document.createElement('figure')
+      wrap.style.cssText = 'margin:0 0 1em;'
+      const img = document.createElement('img')
+      img.src = block.proxySrc || proxyImageSrc(block.src)
+      img.alt = block.alt || ''
+      img.style.cssText = 'display:block;max-width:100%;max-height:70vh;height:auto;border-radius:8px;background:#ebe7dc;'
+      wrap.appendChild(img)
+      if (block.alt) {
+        const cap = document.createElement('figcaption')
+        cap.style.cssText = 'margin-top:6px;font-size:12px;color:#8a8374;'
+        cap.textContent = block.alt
+        wrap.appendChild(cap)
+      }
+      return wrap
+    }
+    if (block.type === 'table') {
+      const table = document.createElement('table')
+      table.style.cssText = 'width:100%;border-collapse:collapse;margin:0 0 1em;font-size:0.85em;'
+      for (const row of block.rows || []) {
+        const tr = document.createElement('tr')
+        for (const cell of row) {
+          const td = document.createElement('td')
+          td.style.cssText = 'border:1px solid #d9d2c4;padding:4px 6px;vertical-align:top;'
+          td.textContent = cell
+          tr.appendChild(td)
+        }
+        table.appendChild(tr)
+      }
+      return table
+    }
+    const p = document.createElement(block.role === 'heading' ? 'h4' : 'p')
+    p.style.cssText = block.role === 'heading'
+      ? 'margin:0 0 0.8em;font-size:1.02em;font-weight:600;'
+      : 'margin:0 0 1em;white-space:pre-wrap;word-break:break-word;'
+    p.textContent = block.text
     return p
   }
 
   const fits = (items, withTitle) => {
     const nodes = []
     if (withTitle && title) nodes.push(titleEl.cloneNode(true))
-    for (const item of items) nodes.push(makeP(item.text))
+    for (const item of items) nodes.push(makeNode(item))
     probe.replaceChildren(...nodes)
     return probe.scrollHeight <= h + 0.5
   }
@@ -126,7 +206,7 @@ function paginateParagraphs(paragraphs, title, width, height, fontScale) {
   const pages = []
   let current = []
   let first = true
-  for (const item of paragraphs) {
+  for (const item of blocks) {
     const next = [...current, item]
     if (fits(next, first)) {
       current = next
@@ -137,6 +217,7 @@ function paginateParagraphs(paragraphs, title, width, height, fontScale) {
       first = false
       current = []
     }
+    // Oversized single figure: still put alone on a page
     current = [item]
   }
   if (current.length) pages.push(current)
@@ -148,6 +229,16 @@ function chapter() {
   return state.chapters[state.chapterIdx] || null
 }
 
+function readingUnits() {
+  if (state.blocks.length) return state.blocks
+  return (state.paragraphs || []).map((p, index) => ({
+    type: 'text',
+    key: `p-${index}`,
+    text: p.text || '',
+    role: 'paragraph',
+  }))
+}
+
 function rebuildPages() {
   const clip = document.querySelector('.clip')
   if (!clip) return
@@ -155,8 +246,8 @@ function rebuildPages() {
   const height = Math.max(1, Math.floor(clip.clientHeight))
   state.pageWidth = width
   state.pageHeight = height
-  state.pages = paginateParagraphs(
-    state.paragraphs,
+  state.pages = paginateBlocks(
+    readingUnits(),
     chapter()?.title || '',
     width,
     height,
@@ -164,6 +255,41 @@ function rebuildPages() {
   )
   state.pageIndex = Math.max(0, Math.min(state.pageIndex, state.pages.length - 1))
   applyTransform()
+}
+
+/** After pagination, rewrite strip HTML so page-flip matches state.pages. */
+function syncReadingStrip() {
+  const strip = document.querySelector('.strip')
+  if (!strip || state.tab !== 'reading') return
+  const pages = state.pages.length ? state.pages : [readingUnits()]
+  strip.innerHTML = pages.map((pageBlocks, index) => `
+    <section class="page">
+      ${index === 0 && chapter()?.title ? `<h3>${escapeHtml(chapter().title)}</h3>` : ''}
+      ${(pageBlocks || []).map((block) => renderBlockHtml(block)).join('')}
+    </section>
+  `).join('')
+  applyTransform()
+  bindFigureReflow()
+}
+
+function bindFigureReflow() {
+  document.querySelectorAll('.page img').forEach((img) => {
+    if (img.dataset.reflowBound === '1') return
+    img.dataset.reflowBound = '1'
+    if (img.complete && img.naturalHeight) return
+    img.addEventListener('load', () => scheduleReadingReflow(), { once: true })
+  })
+}
+
+function scheduleReadingReflow() {
+  clearTimeout(pageReflowTimer)
+  pageReflowTimer = setTimeout(() => {
+    const keep = state.pageIndex
+    rebuildPages()
+    state.pageIndex = Math.max(0, Math.min(keep, state.pages.length - 1))
+    syncReadingStrip()
+    updateBottom()
+  }, 100)
 }
 
 function applyTransform() {
@@ -348,6 +474,8 @@ async function openChapter(index, { startAtEnd = false } = {}) {
     state.chapterIdx = index
     state.chapterText = body.text || ''
     state.paragraphs = body.paragraphs || []
+    state.blocks = normalizeReaderBlocks(body)
+    state.imageCount = Number(body.imageCount || state.blocks.filter((b) => b.type === 'image').length) || 0
     state.pageIndex = startAtEnd ? 9999 : 0
     state.tab = 'reading'
     showError('')
@@ -359,7 +487,7 @@ async function openChapter(index, { startAtEnd = false } = {}) {
     requestAnimationFrame(() => {
       rebuildPages()
       if (startAtEnd) state.pageIndex = Math.max(0, state.pages.length - 1)
-      applyTransform()
+      syncReadingStrip()
       updateBottom()
     })
   }
@@ -525,13 +653,32 @@ function updateBottom() {
   const current = chapter()
   els.bottom.classList.toggle('hidden', !(state.tab === 'reading' && state.book))
   els.bottomTitle.textContent = current?.title || state.book?.title || ''
+  const imgNote = state.imageCount ? ` · 图 ${state.imageCount}` : ''
   els.bottomMeta.textContent = state.book
-    ? `页 ${state.pageIndex + 1}/${Math.max(1, state.pages.length)} · 章 ${state.chapterIdx + 1}/${state.chapters.length} · ↑↓翻页 · ←→翻章`
+    ? `页 ${state.pageIndex + 1}/${Math.max(1, state.pages.length)} · 章 ${state.chapterIdx + 1}/${state.chapters.length}${imgNote} · ↑↓翻页 · ←→翻章`
     : ''
   document.getElementById('btn-prev-chapter').disabled = !(state.chapterIdx > 0)
   document.getElementById('btn-next-chapter').disabled = !(state.chapterIdx < state.chapters.length - 1)
   document.getElementById('btn-prev-page').disabled = !(state.pageIndex > 0 || state.chapterIdx > 0)
   document.getElementById('btn-next-page').disabled = !(state.pageIndex < state.pages.length - 1 || state.chapterIdx < state.chapters.length - 1)
+}
+
+function renderBlockHtml(block) {
+  if (block.type === 'image') {
+    const src = escapeHtml(block.proxySrc || proxyImageSrc(block.src))
+    const alt = escapeHtml(block.alt || '插图')
+    return `<figure class="figure"><img src="${src}" alt="${alt}" loading="lazy" /><figcaption>${alt}</figcaption></figure>`
+  }
+  if (block.type === 'table') {
+    const rows = (block.rows || []).map((row) => (
+      `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`
+    )).join('')
+    return `<div class="table-wrap"><table>${rows}</table></div>`
+  }
+  if (block.role === 'heading') {
+    return `<h4 class="heading">${escapeHtml(block.text)}</h4>`
+  }
+  return `<p>${escapeHtml(block.text)}</p>`
 }
 
 function renderLogin() {
@@ -641,7 +788,11 @@ function renderShelf() {
 
 function renderReading() {
   if (!state.book) return '<div class="empty">先从书架打开一本书</div>'
-  const pages = state.pages.length ? state.pages : [state.paragraphs]
+  const fallbackBlocks = state.blocks.length
+    ? state.blocks
+    : (state.paragraphs || []).map((p, index) => ({ type: 'text', key: `p-${index}`, text: p.text || '', role: 'paragraph' }))
+  const pages = state.pages.length ? state.pages : [fallbackBlocks]
+  const empty = !fallbackBlocks.length && !state.loading
   return `
     <div class="chrome">
       <div class="head">
@@ -650,6 +801,7 @@ function renderReading() {
         <button class="btn compact" id="toggle-batch" type="button">批量复制</button>
         <button class="btn compact" id="font-down" type="button">A-</button>
         <button class="btn compact" id="font-up" type="button">A+</button>
+        ${state.imageCount ? `<span class="meta">本章 ${state.imageCount} 图</span>` : ''}
       </div>
       ${state.showBatch ? `
         <div class="batch">
@@ -676,12 +828,12 @@ function renderReading() {
     </div>
     <div class="frame">
       <div class="clip">
-        ${!state.paragraphs.length && !state.loading
+        ${empty
           ? '<div class="empty">本章没有可读正文</div>'
-          : `<div class="strip">${pages.map((pageParagraphs, index) => `
+          : `<div class="strip">${pages.map((pageBlocks, index) => `
               <section class="page">
                 ${index === 0 && chapter()?.title ? `<h3>${escapeHtml(chapter().title)}</h3>` : ''}
-                ${pageParagraphs.map(p => `<p>${escapeHtml(p.text)}</p>`).join('')}
+                ${(pageBlocks || []).map((block) => renderBlockHtml(block)).join('')}
               </section>
             `).join('')}</div>`}
       </div>
@@ -713,6 +865,7 @@ function render() {
   if (state.tab === 'reading' && state.book) {
     requestAnimationFrame(() => {
       rebuildPages()
+      syncReadingStrip()
       updateBottom()
     })
   }

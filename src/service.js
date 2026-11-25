@@ -10,7 +10,7 @@ import {
   clearTunnelRuntimeKey,
 } from './store.js'
 import * as weread from './weread/client.js'
-import { fetchImageBatch } from './weread/images.js'
+import { fetchImageBatch, fetchImageBytes, isWereadImageUrl } from './weread/images.js'
 import { createQrSession, finishLoginFromInfo, pollLoginInfo, refreshCookie } from './weread/login.js'
 import { makeQrDataUrl } from './weread/qr.js'
 import * as official from './weread/official.js'
@@ -302,6 +302,25 @@ export function createService() {
         imageOffset: options.imageOffset,
         imageLimit: options.imageLimit,
       })
+    },
+
+    /** Proxy a Weread CDN chapter image for the local reader UI (needs login cookie). */
+    async proxyChapterImage(src) {
+      const cookie = requireCookie()
+      const url = String(src || '').trim()
+      if (!url) return { ok: false, status: 400, error: '缺少 src' }
+      if (!isWereadImageUrl(url) && !/^data:image\//i.test(url)) {
+        return { ok: false, status: 400, error: '仅允许微信读书图片域名' }
+      }
+      const file = await fetchImageBytes(url, cookie)
+      if (!file?.ok) {
+        return { ok: false, status: file?.status || 502, error: file?.error || '拉取图片失败' }
+      }
+      return {
+        ok: true,
+        mimeType: file.mimeType,
+        buffer: Buffer.from(file.base64, 'base64'),
+      }
     },
 
     async exportChapters({

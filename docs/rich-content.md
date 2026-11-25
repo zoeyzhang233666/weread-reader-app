@@ -57,6 +57,8 @@ curl -s -X POST http://127.0.0.1:17831/mcp \
 
 自 v0.2.1 起：`weread_get_chapter` **默认**返回图文块 + 一批 ImageContent（不必再传 `rich`/`includeImages`）。只要纯文字时才设 `plain=true`。
 
+本机网页阅读器也会按章节块顺序显示插图（经 `/api/chapter/image` 带登录 Cookie 代理 CDN）。底部状态栏可见「图 N」。
+
 ## 部署更新
 
 ```sh

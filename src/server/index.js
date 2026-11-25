@@ -164,25 +164,42 @@ async function handleApi(req, res, path) {
     }
     if (path === '/api/chapter' && req.method === 'GET') {
       const url = new URL(req.url || '/', `http://${HOST}`)
-      const rich = url.searchParams.get('rich') === '1'
-      if (rich) {
-        sendJson(res, 200, await service.chapterRich(
+      // Reader UI needs ordered blocks (text/image/table). plain=1 keeps old text-only.
+      if (url.searchParams.get('plain') === '1') {
+        sendJson(res, 200, await service.chapter(
           url.searchParams.get('bookId'),
           url.searchParams.get('chapterUid'),
-          {
-            includeHtml: url.searchParams.get('html') === '1',
-            includeBlocks: true,
-            includeImages: url.searchParams.get('images') === '1',
-            imageOffset: url.searchParams.get('imageOffset'),
-            imageLimit: url.searchParams.get('imageLimit'),
-          },
         ))
         return
       }
-      sendJson(res, 200, await service.chapter(
+      sendJson(res, 200, await service.chapterRich(
         url.searchParams.get('bookId'),
         url.searchParams.get('chapterUid'),
+        {
+          includeHtml: url.searchParams.get('html') === '1',
+          includeBlocks: true,
+          // Browser loads figures via /api/chapter/image (cookie proxy); avoid huge base64 by default.
+          includeImages: url.searchParams.get('images') === '1',
+          imageOffset: url.searchParams.get('imageOffset'),
+          imageLimit: url.searchParams.get('imageLimit'),
+        },
       ))
+      return
+    }
+    if (path === '/api/chapter/image' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      const result = await service.proxyChapterImage(url.searchParams.get('src'))
+      if (!result.ok) {
+        sendJson(res, result.status || 502, { error: result.error || 'image fetch failed' })
+        return
+      }
+      res.writeHead(200, {
+        'content-type': result.mimeType,
+        'content-length': result.buffer.length,
+        'cache-control': 'private, max-age=86400',
+        'access-control-allow-origin': '*',
+      })
+      res.end(result.buffer)
       return
     }
     if (path === '/api/chapters/export' && req.method === 'POST') {
