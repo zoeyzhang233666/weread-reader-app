@@ -14,6 +14,8 @@ LOG_FILE="$LOG_DIR/app.log"
 
 export WEREAD_PORT="$PORT"
 export WEREAD_HOST="$HOST"
+# Node fetch needs this to honor HTTP(S)_PROXY / system proxy applied in index.js
+export NODE_OPTIONS="--use-env-proxy ${NODE_OPTIONS:-}"
 
 if [[ ! -x "$NODE_BIN" ]]; then
   osascript -e 'display alert "Weread Reader" message "缺少内置 Node 运行时，请重新安装。" as critical'
@@ -26,7 +28,7 @@ already_up() {
 
 if ! already_up; then
   # Start server in background, keep launcher waiting so Dock icon stays.
-  "$NODE_BIN" "$APP_DIR/src/server/index.js" >>"$LOG_FILE" 2>&1 &
+  "$NODE_BIN" --use-env-proxy "$APP_DIR/src/server/index.js" >>"$LOG_FILE" 2>&1 &
   SERVER_PID=$!
   echo "$SERVER_PID" > "${HOME}/.weread-reader/server.pid"
 

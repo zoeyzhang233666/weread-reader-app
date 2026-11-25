@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline'
+import { applySystemProxy } from '../net/systemProxy.js'
 import { createService } from '../service.js'
 import { createMcpHandler } from './mcp.js'
+
+applySystemProxy()
 
 const service = createService()
 const mcp = createMcpHandler(service)

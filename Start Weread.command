@@ -23,7 +23,7 @@ if [[ -z "${NODE:-}" || ! -x "$NODE" ]]; then
   exit 1
 fi
 
-"$NODE" "$ROOT/src/server/index.js" >>"$LOGDIR/app.log" 2>&1 &
+"$NODE" --use-env-proxy "$ROOT/src/server/index.js" >>"$LOGDIR/app.log" 2>&1 &
 echo $! >"$PIDFILE"
 
 for _ in $(seq 1 40); do

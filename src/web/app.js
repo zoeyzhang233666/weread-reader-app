@@ -540,8 +540,9 @@ function renderLogin() {
       <h3>微信扫码登录</h3>
       <p>扫码后登录态保存在本机 ~/.weread-reader。MCP / ChatGPT 隧道会使用同一登录态。</p>
       <p class="hint" style="color:var(--muted);font-size:13px;line-height:1.5;max-width:420px;margin:0 auto">
-        必须用手机 <strong>微信 → 扫一扫</strong>。<strong>不要</strong>用「微信读书」App 里的扫一扫（会提示登录失败）。
+        必须用手机 <strong>微信 → 扫一扫</strong>。<strong>不要</strong>用「微信读书」App 里的扫一扫。
         Skill 的 <code>wrk-</code> Key 不能代替扫码。
+        公司网络若浏览器能上微信读书、本软件扫码失败：请更新到最新安装包（会自动跟系统代理），或设置环境变量 <code>HTTPS_PROXY</code>。
       </p>
       ${state.qr?.qrDataUrl
         ? `<div class="qr"><img src="${state.qr.qrDataUrl}" alt="登录二维码" width="240" height="240" /><div class="meta">${

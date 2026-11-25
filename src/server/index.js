@@ -3,9 +3,13 @@ import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { extname, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { applySystemProxy } from '../net/systemProxy.js'
 import { createService } from '../service.js'
 import { dataDir } from '../store.js'
 import { createMcpHandler } from './mcp.js'
+
+// Corp networks: browser uses system proxy; Node fetch needs env + --use-env-proxy.
+const proxyInfo = applySystemProxy()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const WEB_DIR = join(__dirname, '../web')
@@ -255,7 +259,21 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/health') {
-    sendJson(res, 200, { ok: true, ...service.status() })
+    sendJson(res, 200, {
+      ok: true,
+      ...service.status(),
+      proxy: {
+        source: proxyInfo.source,
+        applied: proxyInfo.applied,
+        configured: Boolean(proxyInfo.proxy),
+        // never echo full proxy with credentials if any
+        host: proxyInfo.proxy ? (() => {
+          try { return new URL(proxyInfo.proxy).host } catch { return '(set)' }
+        })() : '',
+        useEnvProxy: String(process.execArgv || []).includes('--use-env-proxy')
+          || String(process.env.NODE_OPTIONS || '').includes('--use-env-proxy'),
+      },
+    })
     return
   }
   if (path === '/mcp' || path.startsWith('/mcp/')) {
@@ -282,4 +300,13 @@ server.listen(PORT, HOST, () => {
   console.log(`[weread-reader] MCP    ${base}/mcp`)
   console.log(`[weread-reader] health ${base}/health`)
   console.log(`[weread-reader] data   ${dataDir()}`)
+  if (proxyInfo.proxy) {
+    try {
+      console.log(`[weread-reader] proxy  ${new URL(proxyInfo.proxy).host} (${proxyInfo.source})`)
+    } catch {
+      console.log(`[weread-reader] proxy  set (${proxyInfo.source})`)
+    }
+  } else {
+    console.log('[weread-reader] proxy  none (browser may still use system proxy; if QR login fails on corp net, set HTTPS_PROXY)')
+  }
 })

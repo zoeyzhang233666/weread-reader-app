@@ -10,6 +10,9 @@ set URL=http://127.0.0.1:%PORT%
 set LOGDIR=%USERPROFILE%\.weread-reader\logs
 if not exist "%LOGDIR%" mkdir "%LOGDIR%"
 
+REM Node fetch does not use Windows system proxy unless enabled.
+set NODE_OPTIONS=--use-env-proxy %NODE_OPTIONS%
+
 if not exist "%NODE%" (
   echo Missing embedded Node runtime. Please reinstall.
   pause
@@ -18,7 +21,7 @@ if not exist "%NODE%" (
 
 curl -fsS --max-time 1 %URL%/health >nul 2>&1
 if errorlevel 1 (
-  start "Weread Reader Server" /MIN "%NODE%" "%APP%\src\server\index.js"
+  start "Weread Reader Server" /MIN "%NODE%" --use-env-proxy "%APP%\src\server\index.js"
   timeout /t 2 /nobreak >nul
 )
 
