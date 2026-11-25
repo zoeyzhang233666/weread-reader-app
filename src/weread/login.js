@@ -25,7 +25,10 @@ export async function createQrSession() {
   })
   const data = await res.json().catch(() => ({}))
   const uid = String(data.uid || '').trim()
-  if (!uid) throw new Error('Weread did not return a login uid.')
+  if (!uid) {
+    const hint = data?.errMsg || data?.errmsg || data?.logicCode || `HTTP ${res.status}`
+    throw new Error(`微信读书未返回登录 uid（${hint}）。请检查本机能否访问 weread.qq.com。`)
+  }
   return {
     uid,
     qrUrl: confirmUrlForUid(uid),
@@ -36,17 +39,29 @@ export async function createQrSession() {
 function classifyLoginInfo(data) {
   if (!data || typeof data !== 'object') return { status: 'pending' }
   const logic = String(data.logicCode || data.errcode || data.errCode || '')
+  const msg = data.errMsg || data.errmsg || data.msg || ''
   if (logic === 'LOGIN_TIMEOUT' || logic === '-1') {
-    return { status: 'expired', error: 'QR code expired. Please refresh.' }
+    return { status: 'expired', error: '二维码已过期，请刷新后重试。' }
   }
   if (logic === 'NEED_OTP' || data.needOtp === true) {
     return { status: 'need_otp' }
   }
   if (logic === 'OTP_NOT_MATCH') {
-    return { status: 'need_otp', error: 'Incorrect verification code.' }
+    return { status: 'need_otp', error: '验证码不正确。' }
   }
   if (logic === 'OTP_EXPIRED') {
-    return { status: 'expired', error: 'Verification code expired. Please refresh.' }
+    return { status: 'expired', error: '验证码已过期，请刷新二维码。' }
+  }
+  if (logic && logic !== '0' && !['NEED_OTP', 'OTP_NOT_MATCH', 'OTP_EXPIRED', 'LOGIN_TIMEOUT'].includes(logic)) {
+    // Known reject / risk-control style responses from Weread web login
+    if (/fail|deny|forbid|risk|limit|error|拒绝|失败|异常|封/i.test(`${logic} ${msg}`)) {
+      return {
+        status: 'error',
+        error: msg
+          ? `登录失败：${msg}`
+          : `登录失败（${logic}）。请用「微信 → 扫一扫」（不要用微信读书 App 内扫码），并确认手机微信能打开网页版微信读书。`,
+      }
+    }
   }
   const hasCreds = (data.skey || data.accessToken) && (data.vid != null || data.webLoginVid != null)
   if (hasCreds || data.succeed === true) {

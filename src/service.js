@@ -12,6 +12,7 @@ import {
 import * as weread from './weread/client.js'
 import { fetchImageBatch } from './weread/images.js'
 import { createQrSession, finishLoginFromInfo, pollLoginInfo, refreshCookie } from './weread/login.js'
+import { makeQrDataUrl } from './weread/qr.js'
 import * as official from './weread/official.js'
 
 const COOKIE_REFRESH_MS = 45 * 60 * 1000
@@ -81,7 +82,19 @@ export function createService() {
     },
 
     async startQr() {
-      return createQrSession()
+      const session = await createQrSession()
+      let qrDataUrl = ''
+      try {
+        qrDataUrl = makeQrDataUrl(session.qrUrl)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`生成本地二维码失败：${message}`)
+      }
+      return {
+        ...session,
+        qrDataUrl,
+        scanHint: '请用手机「微信 → 扫一扫」扫描（不要用微信读书 App 内的扫一扫）',
+      }
     },
 
     async waitQr({ uid, otp = '' } = {}) {

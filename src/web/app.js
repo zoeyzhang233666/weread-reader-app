@@ -414,8 +414,10 @@ async function startQr() {
   try {
     const session = await api('/api/auth/qr/start', { method: 'POST', body: '{}' })
     if (generation !== qrAbort) return
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(session.qrUrl)}`
-    state.qr = { ...session, qrDataUrl: qrUrl }
+    // Prefer server-local QR (PNG data URL). Fallback only if older server build.
+    const qrDataUrl = session.qrDataUrl
+      || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(session.qrUrl)}`
+    state.qr = { ...session, qrDataUrl }
     state.qrPhase = 'waiting'
     render()
     while (generation === qrAbort) {
@@ -537,15 +539,20 @@ function renderLogin() {
     <div class="login">
       <h3>微信扫码登录</h3>
       <p>扫码后登录态保存在本机 ~/.weread-reader。MCP / ChatGPT 隧道会使用同一登录态。</p>
+      <p class="hint" style="color:var(--muted);font-size:13px;line-height:1.5;max-width:420px;margin:0 auto">
+        必须用手机 <strong>微信 → 扫一扫</strong>。<strong>不要</strong>用「微信读书」App 里的扫一扫（会提示登录失败）。
+        Skill 的 <code>wrk-</code> Key 不能代替扫码。
+      </p>
       ${state.qr?.qrDataUrl
         ? `<div class="qr"><img src="${state.qr.qrDataUrl}" alt="登录二维码" width="240" height="240" /><div class="meta">${
-          state.qrPhase === 'waiting' ? '等待扫码确认…'
+          state.qrPhase === 'waiting' ? '等待微信扫码确认…'
             : state.qrPhase === 'need_otp' ? '请输入验证码'
               : state.qrPhase === 'expired' ? '二维码已过期'
                 : state.qrPhase === 'error' ? '登录失败'
                   : ''
         }</div></div>`
         : '<div class="qr-placeholder">点击下方按钮生成二维码</div>'}
+      ${state.qr?.qrUrl ? `<p class="hint" style="word-break:break-all;font-size:11px;color:var(--faint);max-width:420px;margin:0 auto">确认链接：${escapeHtml(state.qr.qrUrl)}</p>` : ''}
       ${state.qrPhase === 'need_otp' ? `
         <div class="row" style="justify-content:center">
           <input id="otp-input" value="${state.otp}" placeholder="验证码" maxlength="8" style="width:120px;padding:8px 10px;border:1px solid var(--line2);border-radius:8px" />
