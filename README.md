@@ -208,6 +208,7 @@ stdio 进程会读本机 `~/.weread-reader/`。若未登录：
 | `weread_list_bookshelf` | 书架（含每本书的 `groups` / `groupNames`，官方书 + 导入 TXT/EPUB） |
 | `weread_list_bookshelf_groups` | 书架文件夹列表（`groupId` / 名称 / 书籍数） |
 | `weread_list_bookshelf_group_books` | 按分组 ID 或名称列出文件夹内全部书（如「神作」「仙草」） |
+| `weread_download_book` | 按书架格式导出到本机 downloads（txt→txt，epub/pdf→重建 epub） |
 | `weread_get_book_info` | 元数据（Cookie） |
 | `weread_list_chapters` | 目录 |
 | `weread_get_chapter` | 单章；**默认**图文 + ImageContent |

@@ -207,6 +207,25 @@ async function handleApi(req, res, path) {
       sendJson(res, 200, await service.exportChapters(body))
       return
     }
+    if (path === '/api/book/download' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      const bookId = url.searchParams.get('bookId')
+      const save = url.searchParams.get('save') === '1'
+      const exported = await service.downloadBook(bookId, { save })
+      const filename = exported.filename || `book.${exported.extension || 'bin'}`
+      res.writeHead(200, {
+        'content-type': exported.mimeType || 'application/octet-stream',
+        'content-length': exported.buffer.length,
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*',
+        'x-weread-format': exported.format || '',
+        'x-weread-shelf-format': exported.shelfFormat || '',
+        'x-weread-note': encodeURIComponent(exported.note || ''),
+      })
+      res.end(exported.buffer)
+      return
+    }
     sendJson(res, 404, { error: 'not found' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

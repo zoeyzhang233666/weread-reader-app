@@ -28,6 +28,7 @@ const state = {
   tunnel: { configured: false, prefix: '', source: 'none', path: '' },
   tunnelKeyDraft: '',
   tunnelBusy: false,
+  downloadingBookId: '',
 }
 
 const els = {
@@ -513,6 +514,54 @@ async function openBook(book) {
   }
 }
 
+function downloadLabel(book) {
+  const fmt = String(book?.format || '').toLowerCase()
+  if (fmt === 'txt') return '下载 TXT'
+  if (fmt === 'epub') return '下载 EPUB'
+  if (fmt === 'pdf') return '下载 EPUB'
+  return '下载'
+}
+
+async function downloadBookFile(book) {
+  if (!book?.bookId) return
+  if (state.downloadingBookId) {
+    showToast('正在下载另一本书，请稍候')
+    return
+  }
+  state.downloadingBookId = book.bookId
+  showError('')
+  showToast(`开始导出「${book.title || book.bookId}」…（章节多时可能要几分钟）`)
+  render()
+  try {
+    const res = await fetch(`/api/book/download?bookId=${encodeURIComponent(book.bookId)}`, {
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error || `HTTP ${res.status}`)
+    }
+    const blob = await res.blob()
+    const headerName = res.headers.get('content-disposition') || ''
+    const match = headerName.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i)
+    const filename = decodeURIComponent(match?.[1] || match?.[2] || `${book.title || book.bookId}.bin`)
+    const note = decodeURIComponent(res.headers.get('x-weread-note') || '')
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    showToast(note ? `已下载 ${filename}（${note}）` : `已下载 ${filename}`)
+  } catch (error) {
+    showError(error.message)
+  } finally {
+    state.downloadingBookId = ''
+    render()
+  }
+}
+
 function pageBy(dir) {
   if (state.tab !== 'reading' || !state.book) return
   if (dir > 0) {
@@ -776,12 +825,25 @@ function renderShelf() {
         <span class="meta">${state.official?.configured ? '官方Key✓' : '官方Key未填（设置页）'}</span>
       </div>
       ${state.books.length ? state.books.map(book => `
-        <button class="book" type="button" data-book-id="${book.bookId}">
-          ${book.cover ? `<img src="${book.cover}" alt="" />` : '<div class="cover"></div>'}
-          <div><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.author || '')}</span></div>
-          <span>${typeof book.progress === 'number' ? `${book.progress}%` : ''}</span>
-        </button>
+        <div class="book-row">
+          <button class="book" type="button" data-book-id="${escapeHtml(book.bookId)}">
+            ${book.cover ? `<img src="${escapeHtml(book.cover)}" alt="" />` : '<div class="cover"></div>'}
+            <div>
+              <strong>${escapeHtml(book.title)}</strong>
+              <span>${escapeHtml(book.author || '')}${book.format ? ` · ${escapeHtml(String(book.format).toUpperCase())}` : ''}</span>
+            </div>
+            <span>${typeof book.progress === 'number' ? `${book.progress}%` : ''}</span>
+          </button>
+          <button class="btn compact download-btn" type="button" data-download-id="${escapeHtml(book.bookId)}"
+            ${state.downloadingBookId === book.bookId ? 'disabled' : ''}
+            title="按书架格式导出到本机（章节重建，非整包原文件）">
+            ${state.downloadingBookId === book.bookId ? '导出中…' : downloadLabel(book)}
+          </button>
+        </div>
       `).join('') : '<div class="empty">书架为空，可再点刷新</div>'}
+      <p class="hint" style="margin:8px 2px 0;color:var(--muted);font-size:12px;line-height:1.5">
+        下载说明：微信读书不提供原始上传文件直链。TXT 导出为 .txt；EPUB/PDF 导出为重建的 .epub（含插图）。章节很多时会较慢。
+      </p>
     </div>
   `
 }
@@ -799,6 +861,10 @@ function renderReading() {
         <h2>${escapeHtml(state.book.title)}</h2>
         <button class="btn compact" id="toggle-toc" type="button">${state.showToc ? '收起目录' : '目录'}</button>
         <button class="btn compact" id="toggle-batch" type="button">批量复制</button>
+        <button class="btn compact primary" id="book-download" type="button"
+          ${state.downloadingBookId === state.book.bookId ? 'disabled' : ''}>
+          ${state.downloadingBookId === state.book.bookId ? '导出中…' : downloadLabel(state.book)}
+        </button>
         <button class="btn compact" id="font-down" type="button">A-</button>
         <button class="btn compact" id="font-up" type="button">A+</button>
         ${state.imageCount ? `<span class="meta">本章 ${state.imageCount} 图</span>` : ''}
@@ -917,6 +983,17 @@ function bindDynamic() {
       const book = state.books.find(item => item.bookId === node.dataset.bookId)
       if (book) void openBook(book)
     })
+  })
+  els.body.querySelectorAll('[data-download-id]').forEach((node) => {
+    node.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const book = state.books.find((item) => item.bookId === node.dataset.downloadId)
+      if (book) void downloadBookFile(book)
+    })
+  })
+  document.getElementById('book-download')?.addEventListener('click', () => {
+    if (state.book) void downloadBookFile(state.book)
   })
   document.getElementById('toggle-toc')?.addEventListener('click', () => {
     state.showToc = !state.showToc

@@ -145,6 +145,17 @@ html, body {
   color: var(--muted);
 }
 .shelf { display: grid; gap: 8px; }
+.book-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.book-row .download-btn {
+  align-self: center;
+  white-space: nowrap;
+  min-width: 88px;
+}
 .book {
   display: grid;
   grid-template-columns: 48px 1fr auto;
@@ -158,6 +169,7 @@ html, body {
   cursor: pointer;
   color: inherit;
   font: inherit;
+  width: 100%;
 }
 .book img, .book .cover {
   width: 48px;

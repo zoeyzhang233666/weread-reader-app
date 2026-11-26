@@ -11,6 +11,7 @@ import {
 } from './store.js'
 import * as weread from './weread/client.js'
 import { fetchImageBatch, fetchImageBytes, isWereadImageUrl } from './weread/images.js'
+import { exportBookFile, saveExportToDownloads } from './weread/exportBook.js'
 import { createQrSession, finishLoginFromInfo, pollLoginInfo, refreshCookie } from './weread/login.js'
 import { makeQrDataUrl } from './weread/qr.js'
 import * as official from './weread/official.js'
@@ -320,6 +321,23 @@ export function createService() {
         ok: true,
         mimeType: file.mimeType,
         buffer: Buffer.from(file.base64, 'base64'),
+      }
+    },
+
+    /**
+     * Rebuild shelf book into downloadable bytes (txt / epub).
+     * PDF shelf format is exported as EPUB (Weread only serves HTML shards).
+     */
+    async downloadBook(bookId, { save = false } = {}) {
+      const cookie = requireCookie()
+      const exported = await exportBookFile(cookie, bookId)
+      let saved = null
+      if (save) saved = saveExportToDownloads(exported)
+      return {
+        ...exported,
+        buffer: exported.buffer,
+        savedPath: saved?.path || '',
+        downloadsDir: saved?.dir || '',
       }
     },
 

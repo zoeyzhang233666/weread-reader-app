@@ -220,6 +220,19 @@ export const TOOLS = [
     },
   },
   {
+    name: 'weread_download_book',
+    description:
+      'Download/export one bookshelf book to ~/.weread-reader/downloads/. Uses shelf format when possible: txt→.txt, epub→.epub; pdf shelf books are rebuilt as .epub because Weread only exposes HTML shards (original PDF bytes are not available). Returns saved path + note. Prefer the web UI Download button for browser file save.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bookId: { type: 'string', description: 'Weread bookId from bookshelf' },
+      },
+      required: ['bookId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'weread_list_chapters',
     description: 'List chapters for a book on the bookshelf.',
     inputSchema: {
@@ -478,6 +491,24 @@ export function createMcpHandler(service) {
         }
         case 'weread_get_book_info':
           return textResult(await service.bookInfo(String(args.bookId || '')))
+        case 'weread_download_book': {
+          const body = await service.downloadBook(String(args.bookId || ''), { save: true })
+          return textResult({
+            ok: true,
+            bookId: body.bookId,
+            title: body.title,
+            author: body.author,
+            shelfFormat: body.shelfFormat,
+            exportedFormat: body.format,
+            filename: body.filename,
+            savedPath: body.savedPath,
+            downloadsDir: body.downloadsDir,
+            byteLength: body.byteLength,
+            chapterCount: body.chapterCount,
+            imageCount: body.imageCount,
+            note: body.note,
+          })
+        }
         case 'weread_list_chapters': {
           const body = await service.chapters(String(args.bookId || ''))
           return textResult({
