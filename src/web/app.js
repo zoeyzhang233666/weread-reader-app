@@ -112,6 +112,65 @@ function proxyImageSrc(src) {
   return `/api/chapter/image?src=${encodeURIComponent(value)}`
 }
 
+/** Display box for a figure inside a page (matches CSS max constraints). */
+function imageSlotSize(block, pageW, pageH) {
+  const maxW = Math.max(1, pageW)
+  const maxH = Math.max(80, Math.min(Math.floor(pageH * 0.7), 520))
+  const nw = Number(block?.naturalWidth) || 0
+  const nh = Number(block?.naturalHeight) || 0
+  if (nw > 0 && nh > 0) {
+    const scale = Math.min(maxW / nw, maxH / nh, 1)
+    return {
+      width: Math.max(1, Math.round(nw * scale)),
+      height: Math.max(1, Math.round(nh * scale)),
+    }
+  }
+  // Unknown size: reserve a stable slot so pagination does not jump later.
+  return { width: maxW, height: Math.min(maxH, Math.round(maxW * 0.72)) }
+}
+
+function loadImageNaturalSize(src, { timeoutMs = 8000 } = {}) {
+  const url = String(src || '').trim()
+  if (!url) return Promise.resolve({ width: 0, height: 0 })
+  return new Promise((resolve) => {
+    const img = new Image()
+    let done = false
+    const finish = (width, height) => {
+      if (done) return
+      done = true
+      resolve({ width, height })
+    }
+    const timer = setTimeout(() => finish(0, 0), timeoutMs)
+    img.onload = () => {
+      clearTimeout(timer)
+      finish(img.naturalWidth || 0, img.naturalHeight || 0)
+    }
+    img.onerror = () => {
+      clearTimeout(timer)
+      finish(0, 0)
+    }
+    img.src = url
+  })
+}
+
+async function prefetchBlockImageSizes(blocks, { concurrency = 4, timeoutMs = 8000 } = {}) {
+  const list = (Array.isArray(blocks) ? blocks : []).filter((b) => b?.type === 'image' && b.proxySrc)
+  if (!list.length) return
+  let cursor = 0
+  async function worker() {
+    while (cursor < list.length) {
+      const i = cursor++
+      const block = list[i]
+      if (block.naturalWidth && block.naturalHeight) continue
+      const size = await loadImageNaturalSize(block.proxySrc, { timeoutMs })
+      block.naturalWidth = size.width
+      block.naturalHeight = size.height
+    }
+  }
+  const n = Math.max(1, Math.min(concurrency, list.length))
+  await Promise.all(Array.from({ length: n }, () => worker()))
+}
+
 function normalizeReaderBlocks(body = {}) {
   const raw = Array.isArray(body.blocks) ? body.blocks : []
   if (raw.length) {
@@ -123,6 +182,8 @@ function normalizeReaderBlocks(body = {}) {
           src: String(block.src || ''),
           alt: String(block.alt || ''),
           proxySrc: proxyImageSrc(block.src),
+          naturalWidth: 0,
+          naturalHeight: 0,
         }
       }
       if (block?.type === 'table') {
@@ -164,13 +225,11 @@ function paginateBlocks(blocks, title, width, height, fontScale) {
 
   const makeNode = (block) => {
     if (block.type === 'image') {
+      // Never assign img.src in the probe — that raced with visible loads and
+      // forced repeated reflows (flash). Use a sized placeholder instead.
+      const slot = imageSlotSize(block, w, h)
       const wrap = document.createElement('figure')
-      wrap.style.cssText = 'margin:0 0 1em;'
-      const img = document.createElement('img')
-      img.src = block.proxySrc || proxyImageSrc(block.src)
-      img.alt = block.alt || ''
-      img.style.cssText = 'display:block;max-width:100%;max-height:70vh;height:auto;border-radius:8px;background:#ebe7dc;'
-      wrap.appendChild(img)
+      wrap.style.cssText = `margin:0 0 1em;width:100%;height:${slot.height}px;`
       if (block.alt) {
         const cap = document.createElement('figcaption')
         cap.style.cssText = 'margin-top:6px;font-size:12px;color:#8a8374;'
@@ -276,16 +335,6 @@ function syncReadingStrip() {
     </section>
   `).join('')
   applyTransform()
-  bindFigureReflow()
-}
-
-function bindFigureReflow() {
-  document.querySelectorAll('.page img').forEach((img) => {
-    if (img.dataset.reflowBound === '1') return
-    img.dataset.reflowBound = '1'
-    if (img.complete && img.naturalHeight) return
-    img.addEventListener('load', () => scheduleReadingReflow(), { once: true })
-  })
 }
 
 function scheduleReadingReflow() {
@@ -296,7 +345,7 @@ function scheduleReadingReflow() {
     state.pageIndex = Math.max(0, Math.min(keep, state.pages.length - 1))
     syncReadingStrip()
     updateBottom()
-  }, 100)
+  }, 120)
 }
 
 function applyTransform() {
@@ -483,6 +532,10 @@ async function openChapter(index, { startAtEnd = false } = {}) {
     state.paragraphs = body.paragraphs || []
     state.blocks = normalizeReaderBlocks(body)
     state.imageCount = Number(body.imageCount || state.blocks.filter((b) => b.type === 'image').length) || 0
+    // Measure figures first so pagination uses final heights (avoids load→reflow flash).
+    if (state.imageCount) {
+      await prefetchBlockImageSizes(state.blocks, { concurrency: 4, timeoutMs: 6000 })
+    }
     state.pageIndex = startAtEnd ? 9999 : 0
     state.tab = 'reading'
     showError('')
@@ -569,7 +622,16 @@ async function downloadBookFile(book) {
     total: 0,
     message: '创建导出任务…',
   })
-  render()
+  // Avoid full reading remount (flash); only refresh shelf/button chrome when not reading.
+  if (state.tab !== 'reading') render()
+  else {
+    document.querySelectorAll('[data-download-id], #book-download').forEach((node) => {
+      if (node.id === 'book-download' || node.dataset.downloadId === book.bookId) {
+        node.disabled = true
+        node.textContent = '导出中…'
+      }
+    })
+  }
   try {
     const startRes = await fetch('/api/book/export/start', {
       method: 'POST',
@@ -795,7 +857,12 @@ function renderBlockHtml(block) {
   if (block.type === 'image') {
     const src = escapeHtml(block.proxySrc || proxyImageSrc(block.src))
     const alt = escapeHtml(block.alt || '插图')
-    return `<figure class="figure"><img src="${src}" alt="${alt}" loading="lazy" /><figcaption>${alt}</figcaption></figure>`
+    const slot = imageSlotSize(block, state.pageWidth || 360, state.pageHeight || 640)
+    const ratio = block.naturalWidth && block.naturalHeight
+      ? ` style="aspect-ratio:${block.naturalWidth}/${block.naturalHeight};max-height:${slot.height}px"`
+      : ` style="min-height:${slot.height}px"`
+    // Eager load: lazy + late decode caused empty→filled flashes after pagination.
+    return `<figure class="figure"${ratio}><img src="${src}" alt="${alt}" decoding="async" /><figcaption>${alt}</figcaption></figure>`
   }
   if (block.type === 'table') {
     const rows = (block.rows || []).map((row) => (
@@ -1180,10 +1247,8 @@ window.addEventListener('keydown', (event) => {
 })
 
 window.addEventListener('resize', () => {
-  if (state.tab === 'reading') {
-    rebuildPages()
-    updateBottom()
-  }
+  if (state.tab !== 'reading' || !state.book) return
+  scheduleReadingReflow()
 })
 
 await refreshStatus()

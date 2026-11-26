@@ -7,7 +7,7 @@ DIST="$ROOT/dist"
 STAGE="$DIST/macos-stage"
 APP="$STAGE/Weread Reader.app"
 NODE_TGZ="$VENDOR/node-darwin-arm64.tar.gz"
-VERSION="0.2.5"
+VERSION="0.2.6"
 
 mkdir -p "$VENDOR" "$DIST"
 if [[ ! -f "$NODE_TGZ" ]]; then

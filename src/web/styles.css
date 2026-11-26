@@ -264,6 +264,9 @@ html, body {
 .page .figure {
   margin: 0 0 1em;
   break-inside: avoid;
+  background: #ebe7dc;
+  border-radius: 8px;
+  overflow: hidden;
 }
 .page .figure img {
   display: block;
@@ -274,6 +277,8 @@ html, body {
   border-radius: 8px;
   background: #ebe7dc;
   border: 1px solid var(--line);
+  /* Avoid empty→paint pop when decode finishes */
+  content-visibility: auto;
 }
 .page .figure figcaption {
   margin-top: 6px;
