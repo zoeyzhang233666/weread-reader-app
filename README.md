@@ -240,8 +240,8 @@ stdio 进程会读本机 `~/.weread-reader/`。若未登录：
 
 | 平台 | 文件（Release 或本地 `dist/`） |
 |------|------|
-| Mac M 芯片 | `WereadReader-0.2.4-mac-arm64.dmg` / `.zip` |
-| Windows x64 | `WereadReader-0.2.4-win-x64.zip` → `WereadReader.bat` |
+| Mac M 芯片 | `WereadReader-0.2.5-mac-arm64.dmg` / `.zip` |
+| Windows x64 | `WereadReader-0.2.5-win-x64.zip` → `WereadReader.bat` |
 
 ```sh
 cd /Users/edy/weread-reader-app

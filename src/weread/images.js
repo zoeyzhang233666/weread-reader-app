@@ -23,9 +23,14 @@ function sniffMime(buf, headerMime = '') {
 export function isWereadImageUrl(url) {
   try {
     const u = new URL(String(url || ''))
+    if (!(u.protocol === 'https:' || u.protocol === 'http:')) return false
+    const host = u.hostname.toLowerCase()
+    // Chapter CDN + cover CDN used by Weread web/app.
     return (
-      (u.protocol === 'https:' || u.protocol === 'http:') &&
-      /(^|\.)weread\.qq\.com$/i.test(u.hostname)
+      /(^|\.)weread\.qq\.com$/i.test(host) ||
+      /\.image\.myqcloud\.com$/i.test(host) ||
+      /^wfqqreader-/i.test(host) ||
+      /(^|\.)qqreader\.com$/i.test(host)
     )
   } catch {
     return false

@@ -226,10 +226,46 @@ async function handleApi(req, res, path) {
       res.end(exported.buffer)
       return
     }
+    if (path === '/api/book/export/start' && req.method === 'POST') {
+      const body = await readJson(req)
+      const save = body?.save === true || body?.save === 1 || body?.save === '1'
+      sendJson(res, 200, service.startBookExport(body?.bookId, { save }))
+      return
+    }
+    if (path === '/api/book/export/status' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      sendJson(res, 200, service.getExportJob(url.searchParams.get('jobId')))
+      return
+    }
+    if (path === '/api/book/export/file' && req.method === 'GET') {
+      const url = new URL(req.url || '/', `http://${HOST}`)
+      try {
+        const exported = service.takeExportJobFile(url.searchParams.get('jobId'))
+        const filename = exported.filename || 'book.bin'
+        res.writeHead(200, {
+          'content-type': exported.mimeType || 'application/octet-stream',
+          'content-length': exported.buffer.length,
+          'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          'cache-control': 'no-store',
+          'access-control-allow-origin': '*',
+          'x-weread-format': exported.format || '',
+          'x-weread-note': encodeURIComponent(exported.note || ''),
+        })
+        res.end(exported.buffer)
+      } catch (error) {
+        const code = error?.code
+        const status = code === 'NOT_FOUND' ? 404 : code === 'NOT_READY' ? 409 : 502
+        sendJson(res, status, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
     sendJson(res, 404, { error: 'not found' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const status = error?.code === 'UNAUTHORIZED' || /未登录|扫码/.test(message) ? 401 : 502
+    let status = 502
+    if (error?.code === 'UNAUTHORIZED' || /未登录|扫码/.test(message)) status = 401
+    else if (error?.code === 'NOT_FOUND') status = 404
+    else if (error?.code === 'NOT_READY') status = 409
     sendJson(res, status, { error: message })
   }
 }

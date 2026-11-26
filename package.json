@@ -1,6 +1,6 @@
 {
   "name": "weread-reader-app",
-  "version": "0.3.0",
+  "version": "0.2.5",
   "private": true,
   "type": "module",
   "description": "Standalone WeChat Reading reader + local MCP for Cursor / ChatGPT tunnel",

@@ -76,27 +76,54 @@ ${body}
 `
 }
 
-function collectImageUrls(html) {
-  const urls = []
+/**
+ * Collect img refs to fetch. Relative cover paths (leftover from original EPUB)
+ * are resolved to the book cover CDN URL when available.
+ * @returns {{ key: string, fetchUrl: string }[]}
+ */
+function collectImageTargets(html, { coverUrl = '' } = {}) {
+  const out = []
+  const seen = new Set()
   const re = /<img\b[^>]*\b(?:src|data-src)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi
   let m
   while ((m = re.exec(String(html || '')))) {
     const src = (m[1] || m[2] || m[3] || '').trim()
-    if (src && isWereadImageUrl(src)) urls.push(src)
+    if (!src || seen.has(src)) continue
+    let fetchUrl = ''
+    if (isWereadImageUrl(src)) {
+      fetchUrl = src
+    } else if (
+      coverUrl &&
+      !/^https?:\/\//i.test(src) &&
+      !/^data:/i.test(src) &&
+      /(cover|frontcover)/i.test(src)
+    ) {
+      fetchUrl = coverUrl
+    }
+    if (!fetchUrl) continue
+    seen.add(src)
+    out.push({ key: src, fetchUrl })
   }
-  return [...new Set(urls)]
+  return out
 }
 
 function rewriteImageSrcs(html, urlToLocal) {
-  return String(html || '').replace(
-    /(<img\b[^>]*\b)(?:src|data-src)(\s*=\s*)(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi,
-    (full, pre, eq, a, b, c) => {
-      const src = (a || b || c || '').trim()
-      const local = urlToLocal.get(src)
-      if (!local) return full
-      return `${pre}src${eq}"${local}"`
-    },
-  )
+  return String(html || '').replace(/<img\b[^>]*>/gi, (tag) => {
+    let next = tag
+    for (const [src, local] of urlToLocal.entries()) {
+      if (!src || !local) continue
+      const esc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      next = next.replace(
+        new RegExp(`(?:src|data-src)\\s*=\\s*(["'])${esc}\\1`, 'gi'),
+        `src="${local}"`,
+      )
+      next = next.replace(
+        new RegExp(`(?:src|data-src)\\s*=\\s*${esc}(?=[\\s>/])`, 'gi'),
+        `src="${local}"`,
+      )
+    }
+    return next
+  })
 }
 
 async function exportTxt(cookie, { bookId, info, chapters, onProgress }) {
@@ -105,14 +132,23 @@ async function exportTxt(cookie, { bookId, info, chapters, onProgress }) {
   if (info.author) parts.push(`作者：${info.author}`)
   parts.push('')
   let done = 0
+  const total = chapters.length
   for (const ch of chapters) {
     const content = await weread.getChapterContent(cookie, bookId, ch.chapterUid)
     parts.push(`\n\n# ${ch.title || `章节 ${ch.chapterUid}`}\n`)
     parts.push(content.text || '')
     done += 1
-    onProgress?.({ done, total: chapters.length, title: ch.title })
+    onProgress?.({
+      stage: 'chapters',
+      done,
+      total,
+      title: ch.title,
+      percent: Math.min(95, Math.round((done / Math.max(total, 1)) * 95)),
+      message: `正在导出章节 ${done}/${total}`,
+    })
     await sleep(40)
   }
+  onProgress?.({ stage: 'packing', done: total, total, percent: 98, message: '正在打包 TXT…' })
   const buffer = Buffer.from(parts.join('\n'), 'utf8')
   return {
     format: 'txt',
@@ -128,30 +164,41 @@ async function exportEpub(cookie, { bookId, info, chapters, onProgress }) {
   const chapterFiles = []
   const imageEntries = []
   const urlToLocal = new Map()
+  const fetchUrlToZipPath = new Map()
   let imageSeq = 0
   let done = 0
+  const total = chapters.length
+  const coverUrl = String(info.cover || '').trim()
 
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i]
     const content = await weread.getChapterContent(cookie, bookId, ch.chapterUid)
     let html = content.html || `<p>${xmlEscape(content.text || '')}</p>`
-    const urls = collectImageUrls(html)
-    const fetched = await mapPool(urls, IMAGE_CONCURRENCY, async (src) => {
-      if (urlToLocal.has(src)) return null
-      const file = await fetchImageBytes(src, cookie)
+    const targets = collectImageTargets(html, { coverUrl })
+    await mapPool(targets, IMAGE_CONCURRENCY, async (target) => {
+      if (urlToLocal.has(target.key)) return null
+      // Reuse already-fetched bytes when multiple keys resolve to same CDN URL.
+      if (fetchUrlToZipPath.has(target.fetchUrl)) {
+        const zipPath = fetchUrlToZipPath.get(target.fetchUrl)
+        // Chapters live under OEBPS/chapters/ → need ../images/...
+        urlToLocal.set(target.key, `../${zipPath}`)
+        return zipPath
+      }
+      const file = await fetchImageBytes(target.fetchUrl, cookie)
       if (!file?.ok) return null
       const ext = (file.mimeType.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
-      const localName = `images/img_${String(++imageSeq).padStart(4, '0')}.${ext}`
-      urlToLocal.set(src, localName)
+      const zipPath = `images/img_${String(++imageSeq).padStart(4, '0')}.${ext}`
+      fetchUrlToZipPath.set(target.fetchUrl, zipPath)
+      // XHTML is in OEBPS/chapters/*.xhtml; images are OEBPS/images/*
+      urlToLocal.set(target.key, `../${zipPath}`)
       imageEntries.push({
-        name: `OEBPS/${localName}`,
+        name: `OEBPS/${zipPath}`,
         data: Buffer.from(file.base64, 'base64'),
         mediaType: file.mimeType,
-        localName,
+        localName: zipPath,
       })
-      return localName
+      return zipPath
     })
-    void fetched
     html = rewriteImageSrcs(html, urlToLocal)
     const fileName = `chapters/chap_${String(i + 1).padStart(4, '0')}.xhtml`
     chapterFiles.push({
@@ -165,9 +212,23 @@ async function exportEpub(cookie, { bookId, info, chapters, onProgress }) {
       }),
     })
     done += 1
-    onProgress?.({ done, total: chapters.length, title: ch.title })
+    onProgress?.({
+      stage: 'chapters',
+      done,
+      total,
+      title: ch.title,
+      percent: Math.min(95, Math.round((done / Math.max(total, 1)) * 95)),
+      message: `正在导出章节 ${done}/${total}${imageSeq ? `（插图 ${imageSeq}）` : ''}`,
+    })
     await sleep(40)
   }
+  onProgress?.({
+    stage: 'packing',
+    done: total,
+    total,
+    percent: 98,
+    message: `正在打包 EPUB（${imageSeq} 张插图）…`,
+  })
 
   const manifestItems = [
     ...chapterFiles.map((c) => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`),
@@ -256,7 +317,9 @@ export async function exportBookFile(cookie, bookId, { onProgress, maxChapters =
   const id = String(bookId || '').trim()
   if (!id) throw new Error('需要 bookId')
 
+  onProgress?.({ stage: 'info', done: 0, total: 0, percent: 1, message: '正在读取书籍信息…' })
   const info = await weread.normalizeBookInfo(await weread.getBookInfo(cookie, id))
+  onProgress?.({ stage: 'info', done: 0, total: 0, percent: 3, message: '正在获取章节列表…' })
   const chapters = await weread.getChapters(cookie, id)
   if (!chapters.length) throw new Error('该书没有可导出的章节（可能无权限或需 App 阅读）')
   if (chapters.length > maxChapters) {
@@ -264,6 +327,13 @@ export async function exportBookFile(cookie, bookId, { onProgress, maxChapters =
   }
 
   const shelfFormat = String(info.format || '').toLowerCase() || 'txt'
+  onProgress?.({
+    stage: 'chapters',
+    done: 0,
+    total: chapters.length,
+    percent: 5,
+    message: `共 ${chapters.length} 章，开始导出…`,
+  })
   let exported
   if (shelfFormat === 'txt') {
     exported = await exportTxt(cookie, { bookId: id, info, chapters, onProgress })
@@ -274,6 +344,14 @@ export async function exportBookFile(cookie, bookId, { onProgress, maxChapters =
   }
 
   const filename = `${safeFileBase(info.title, id)}.${exported.extension}`
+  onProgress?.({
+    stage: 'done',
+    done: chapters.length,
+    total: chapters.length,
+    percent: 100,
+    message: '导出完成',
+    filename,
+  })
   return {
     bookId: id,
     title: info.title || id,

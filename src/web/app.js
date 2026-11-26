@@ -29,6 +29,7 @@ const state = {
   tunnelKeyDraft: '',
   tunnelBusy: false,
   downloadingBookId: '',
+  exportProgress: null,
 }
 
 const els = {
@@ -42,6 +43,11 @@ const els = {
   tabShelf: document.getElementById('tab-shelf'),
   tabReading: document.getElementById('tab-reading'),
   tabSettings: document.getElementById('tab-settings'),
+  exportOverlay: document.getElementById('export-overlay'),
+  exportTitle: document.getElementById('export-title'),
+  exportMsg: document.getElementById('export-msg'),
+  exportBarFill: document.getElementById('export-bar-fill'),
+  exportMeta: document.getElementById('export-meta'),
 }
 
 let toastTimer = 0
@@ -522,6 +528,31 @@ function downloadLabel(book) {
   return '下载'
 }
 
+function setExportProgress(progress) {
+  state.exportProgress = progress
+  if (!els.exportOverlay) return
+  if (!progress) {
+    els.exportOverlay.classList.add('hidden')
+    return
+  }
+  els.exportOverlay.classList.remove('hidden')
+  const pct = Math.max(0, Math.min(100, Number(progress.percent) || 0))
+  if (els.exportTitle) {
+    els.exportTitle.textContent = `正在导出「${progress.bookTitle || progress.bookId || ''}」`
+  }
+  if (els.exportMsg) els.exportMsg.textContent = progress.message || '处理中…'
+  if (els.exportBarFill) els.exportBarFill.style.width = `${pct}%`
+  if (els.exportMeta) {
+    const parts = [`${pct}%`]
+    if (progress.total) parts.push(`${progress.done || 0}/${progress.total} 章`)
+    els.exportMeta.textContent = parts.join(' · ')
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function downloadBookFile(book) {
   if (!book?.bookId) return
   if (state.downloadingBookId) {
@@ -530,10 +561,55 @@ async function downloadBookFile(book) {
   }
   state.downloadingBookId = book.bookId
   showError('')
-  showToast(`开始导出「${book.title || book.bookId}」…（章节多时可能要几分钟）`)
+  setExportProgress({
+    bookId: book.bookId,
+    bookTitle: book.title || book.bookId,
+    percent: 1,
+    done: 0,
+    total: 0,
+    message: '创建导出任务…',
+  })
   render()
   try {
-    const res = await fetch(`/api/book/download?bookId=${encodeURIComponent(book.bookId)}`, {
+    const startRes = await fetch('/api/book/export/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bookId: book.bookId }),
+    })
+    const startBody = await startRes.json().catch(() => ({}))
+    if (!startRes.ok) throw new Error(startBody.error || `HTTP ${startRes.status}`)
+    const jobId = startBody.jobId
+    if (!jobId) throw new Error('未返回导出任务 ID')
+
+    let status = startBody
+    while (status.status === 'running' || status.status === 'queued') {
+      setExportProgress({
+        bookId: book.bookId,
+        bookTitle: book.title || book.bookId,
+        percent: status.percent ?? 0,
+        done: status.done ?? 0,
+        total: status.total ?? 0,
+        message: status.message || '导出中…',
+      })
+      await sleep(400)
+      const poll = await fetch(`/api/book/export/status?jobId=${encodeURIComponent(jobId)}`, {
+        cache: 'no-store',
+      })
+      status = await poll.json().catch(() => ({}))
+      if (!poll.ok) throw new Error(status.error || `HTTP ${poll.status}`)
+    }
+
+    if (status.status === 'error') throw new Error(status.error || '导出失败')
+    setExportProgress({
+      bookId: book.bookId,
+      bookTitle: book.title || book.bookId,
+      percent: 100,
+      done: status.done || status.total || 0,
+      total: status.total || 0,
+      message: '正在保存文件…',
+    })
+
+    const res = await fetch(`/api/book/export/file?jobId=${encodeURIComponent(jobId)}`, {
       cache: 'no-store',
     })
     if (!res.ok) {
@@ -543,8 +619,10 @@ async function downloadBookFile(book) {
     const blob = await res.blob()
     const headerName = res.headers.get('content-disposition') || ''
     const match = headerName.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i)
-    const filename = decodeURIComponent(match?.[1] || match?.[2] || `${book.title || book.bookId}.bin`)
-    const note = decodeURIComponent(res.headers.get('x-weread-note') || '')
+    const filename = decodeURIComponent(
+      match?.[1] || match?.[2] || status.filename || `${book.title || book.bookId}.bin`,
+    )
+    const note = decodeURIComponent(res.headers.get('x-weread-note') || status.note || '')
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -553,11 +631,12 @@ async function downloadBookFile(book) {
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
-    showToast(note ? `已下载 ${filename}（${note}）` : `已下载 ${filename}`)
+    showToast(note ? `已下载 ${filename}` : `已下载 ${filename}`)
   } catch (error) {
     showError(error.message)
   } finally {
     state.downloadingBookId = ''
+    setExportProgress(null)
     render()
   }
 }

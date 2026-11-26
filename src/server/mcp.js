@@ -2,14 +2,14 @@
 
 export const SERVER_INFO = {
   name: 'weread-reader',
-  version: '0.3.1-groups+images',
+  version: '0.2.5-export-progress',
 }
 
 export const TOOLS = [
   {
     name: 'weread_server_info',
     description:
-      'ALWAYS call this first to verify the Weread MCP build. Returns version (expect 0.3.1-groups+images), chapter ImageContent support, bookshelf groups, and whether the official WEREAD_API_KEY (wrk-) is configured for reading stats/notes/search.',
+      'ALWAYS call this first to verify the Weread MCP build. Returns version (expect 0.2.5-export-progress), chapter ImageContent support, bookshelf groups, and whether the official WEREAD_API_KEY (wrk-) is configured for reading stats/notes/search.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

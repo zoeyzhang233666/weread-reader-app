@@ -20,6 +20,32 @@ const COOKIE_REFRESH_MS = 45 * 60 * 1000
 const MAX_BATCH = 40
 const DEFAULT_IMAGE_LIMIT = 4
 const MAX_IMAGE_LIMIT = 10
+const EXPORT_JOB_TTL_MS = 30 * 60 * 1000
+
+function makeExportJobId() {
+  return `exp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+function publicExportJob(job) {
+  if (!job) return null
+  return {
+    jobId: job.jobId,
+    bookId: job.bookId,
+    status: job.status,
+    percent: job.percent,
+    done: job.done,
+    total: job.total,
+    stage: job.stage,
+    title: job.title || '',
+    message: job.message || '',
+    filename: job.filename || '',
+    format: job.format || '',
+    note: job.note || '',
+    error: job.error || '',
+    imageCount: job.imageCount || 0,
+    chapterCount: job.chapterCount || 0,
+  }
+}
 
 function clampInt(value, { min = 0, max = 100, fallback = 0 } = {}) {
   const n = Number(value)
@@ -29,10 +55,21 @@ function clampInt(value, { min = 0, max = 100, fallback = 0 } = {}) {
 
 export function createService() {
   let session = loadSession()
+  /** @type {Map<string, object>} */
+  const exportJobs = new Map()
 
   const persistCookie = (cookie) => {
     session = saveSession({ cookie, cookieUpdatedAt: Date.now() })
     return session.cookie
+  }
+
+  const pruneExportJobs = () => {
+    const now = Date.now()
+    for (const [id, job] of exportJobs.entries()) {
+      if (now - (job.updatedAt || job.createdAt || 0) > EXPORT_JOB_TTL_MS) {
+        exportJobs.delete(id)
+      }
+    }
   }
 
   const requireCookie = () => {
@@ -328,9 +365,9 @@ export function createService() {
      * Rebuild shelf book into downloadable bytes (txt / epub).
      * PDF shelf format is exported as EPUB (Weread only serves HTML shards).
      */
-    async downloadBook(bookId, { save = false } = {}) {
+    async downloadBook(bookId, { save = false, onProgress } = {}) {
       const cookie = requireCookie()
-      const exported = await exportBookFile(cookie, bookId)
+      const exported = await exportBookFile(cookie, bookId, { onProgress })
       let saved = null
       if (save) saved = saveExportToDownloads(exported)
       return {
@@ -339,6 +376,116 @@ export function createService() {
         savedPath: saved?.path || '',
         downloadsDir: saved?.dir || '',
       }
+    },
+
+    /** Start async export; poll getExportJob / fetch getExportJobFile. */
+    startBookExport(bookId, { save = false } = {}) {
+      pruneExportJobs()
+      const cookie = requireCookie()
+      const id = String(bookId || '').trim()
+      if (!id) throw new Error('需要 bookId')
+      const jobId = makeExportJobId()
+      const job = {
+        jobId,
+        bookId: id,
+        status: 'running',
+        percent: 0,
+        done: 0,
+        total: 0,
+        stage: 'queued',
+        title: '',
+        message: '排队中…',
+        filename: '',
+        format: '',
+        note: '',
+        error: '',
+        imageCount: 0,
+        chapterCount: 0,
+        buffer: null,
+        mimeType: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      exportJobs.set(jobId, job)
+
+      void (async () => {
+        try {
+          const exported = await exportBookFile(cookie, id, {
+            onProgress: (p = {}) => {
+              job.stage = p.stage || job.stage
+              job.done = p.done ?? job.done
+              job.total = p.total ?? job.total
+              job.percent = p.percent ?? job.percent
+              job.title = p.title || job.title
+              job.message = p.message || job.message
+              if (p.filename) job.filename = p.filename
+              job.updatedAt = Date.now()
+            },
+          })
+          let saved = null
+          if (save) saved = saveExportToDownloads(exported)
+          job.status = 'done'
+          job.percent = 100
+          job.stage = 'done'
+          job.message = '导出完成'
+          job.filename = exported.filename
+          job.format = exported.format
+          job.note = exported.note || ''
+          job.imageCount = exported.imageCount || 0
+          job.chapterCount = exported.chapterCount || 0
+          job.buffer = exported.buffer
+          job.mimeType = exported.mimeType
+          job.savedPath = saved?.path || ''
+          job.updatedAt = Date.now()
+        } catch (error) {
+          job.status = 'error'
+          job.stage = 'error'
+          job.error = error instanceof Error ? error.message : String(error)
+          job.message = job.error
+          job.updatedAt = Date.now()
+        }
+      })()
+
+      return publicExportJob(job)
+    },
+
+    getExportJob(jobId) {
+      pruneExportJobs()
+      const job = exportJobs.get(String(jobId || ''))
+      if (!job) {
+        const err = new Error('导出任务不存在或已过期')
+        err.code = 'NOT_FOUND'
+        throw err
+      }
+      return publicExportJob(job)
+    },
+
+    takeExportJobFile(jobId) {
+      pruneExportJobs()
+      const job = exportJobs.get(String(jobId || ''))
+      if (!job) {
+        const err = new Error('导出任务不存在或已过期')
+        err.code = 'NOT_FOUND'
+        throw err
+      }
+      if (job.status === 'error') throw new Error(job.error || '导出失败')
+      if (job.status !== 'done' || !job.buffer) {
+        const err = new Error('导出尚未完成')
+        err.code = 'NOT_READY'
+        throw err
+      }
+      const payload = {
+        filename: job.filename,
+        mimeType: job.mimeType || 'application/octet-stream',
+        buffer: job.buffer,
+        format: job.format,
+        note: job.note || '',
+        shelfFormat: '',
+      }
+      // Keep metadata but drop heavy buffer after first successful take.
+      job.buffer = null
+      job.updatedAt = Date.now()
+      return payload
     },
 
     async exportChapters({

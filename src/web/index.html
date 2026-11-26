@@ -29,6 +29,14 @@
       <button class="page-btn" id="btn-next-chapter" type="button" title="下一章">››</button>
     </div>
     <div id="toast" class="toast hidden"></div>
+    <div id="export-overlay" class="export-overlay hidden" aria-live="polite">
+      <div class="export-card">
+        <div class="export-title" id="export-title">正在导出</div>
+        <div class="export-msg" id="export-msg">准备中…</div>
+        <div class="export-bar"><div class="export-bar-fill" id="export-bar-fill"></div></div>
+        <div class="export-meta" id="export-meta">0%</div>
+      </div>
+    </div>
   </div>
   <script type="module" src="/app.js"></script>
 </body>
